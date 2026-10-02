@@ -1,0 +1,77 @@
+--- SPRITESHEET REDUNDANCY REPORT ---
+
+The following atlases (spritesheets) are used by the game engine, but many of the individual sprites they contain also exist as standalone singular image files in the project. These singular files are technically redundant as the engine predominantly samples them from the sheets.
+
+1. ATLAS: food.png
+   REDUNDANT STANDALONE IMAGES:
+   - apple.png
+   - golden_apple.png
+   - carrot.png
+   - golden_carrot.png
+   - potato.png
+   - baked_potato.png
+   - bread.png
+   - beef.png
+   - cooked_beef.png
+   - chicken.png (raw_chicken)
+   - cooked_chicken.png
+   - porkchop (3).png (cooked_porkchop)
+   - porkchop (4).png (raw_porkchop)
+   - cooked_porkchop.png
+   - rotten_flesh.png
+   - raw_fish.png
+   - (Note: some fish variants like salmon also in sheet)
+
+2. ATLAS: farming.png
+   REDUNDANT STANDALONE IMAGES:
+   - wheat_seeds.png
+   - wheat_stage0.png through wheat_stage7.png
+   - carrots_stage0.png through carrots_stage3.png
+   - potatoes_stage0.png through potatoes_stage3.png
+
+3. ATLAS: deadandsugar.png.png
+   REDUNDANT STANDALONE IMAGES:
+   - dead_bush.png
+   - sugar_cane.png
+
+4. ATLAS: items (1).png
+   REDUNDANT STANDALONE IMAGES:
+   - paper.png
+   - sugar.png
+   - string.png
+   - raw_fish.png
+   - saddle.png
+   - coal.png
+   - stick.png
+   - feather.png
+   - gunpowder.png
+   - leather.png
+   - clay_ball.png
+   - bone.png
+   - bone_meal.png
+   - glowstone_dust.png
+   - flint.png
+
+5. ATLAS: tools (1).png
+   REDUNDANT STANDALONE IMAGES:
+   - woodensword.png, stone_sword.png, iron_sword.png, golden_sword.png, diamond_sword.png
+   - woodenshovel.png, stone_shovel.png, iron_shovel.png, golden_shovel.png, diamond_shovel.png
+   - woodenpickaxe.png, stone_pickaxe.png, iron_pickaxe.png, golden_pickaxe.png, diamond_pickaxe.png
+   - wooden_axe.png, stone_axe.png, iron_axe.png, golden_axe.png, diamond_axe.png
+   - wooden_hoe.png, stone_hoe.png, iron_hoe.png, golden_hoe.png, diamond_hoe.png
+   - bowidle.png
+   - sheer.png
+   - flint_and_steel.png
+   - fishing_rod.png
+
+6. ATLAS: blocks.png
+   REDUNDANT STANDALONE IMAGES:
+   - clay.png
+   - ice.png
+   - (Note: generic textures for dirt/grass/stone in sheet often have higher-res standalone counterparts like smooth_stone.png)
+
+7. SPECIAL SHEETS (3D BLOCK FRAGMENTS):
+   - furnace.png.png (Contains front, lit, side, top)
+   - chest.png.png (Contains front, side, top)
+   - pumpkin.png.png (Contains top, side, front, jack)
+   - bed.png (Contains head, foot, sides, bottom)
