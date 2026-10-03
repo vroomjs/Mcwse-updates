@@ -70,6 +70,18 @@ export default class Multiplayer {
         this.pendingJoinRequests = [];
         this.joinHoldTicks = 0;
         this.joinNotice = null;
+        this.joinDialogId = null;
+        this.pendingHostUsername = null;
+        // Join requests that left the queue without the host ever accepting
+        // them. Surfaced as the unseen-notification badge on the pause menu.
+        this.missedJoinRequests = [];
+        // Set for the duration of a join that should drop straight into the
+        // world (launched from the saved world list) rather than just adding
+        // the host to it.
+        this.enterOnApproval = false;
+        // Reusable, persisted grants handed out when a host accepts someone.
+        // Distinct from approvedJoinTokens, which is one-shot and in-memory.
+        this.savedJoinTokens = this.loadSavedJoinTokens();
         this.suppressJoinKeyUntilRelease = false;
         this.approvedJoinTokens = new Map();
         this.isProcessingRemoteUpdate = false;
@@ -112,6 +124,89 @@ export default class Multiplayer {
         return Math.random().toString(36).substring(2, 8).toUpperCase();
     }
 
+    /**
+     * Each world keeps the LAN code it last hosted on, so saved entries in
+     * other players' world lists stay valid between sessions. Without this a
+     * host rolls a fresh code every time and every saved entry dies instantly.
+     *
+     * Shape: { byWorld: { [worldId]: CODE }, last: CODE }
+     */
+    loadLanCodes(){
+        try{
+            const raw=localStorage.getItem('mc_lan_codes_v1');
+            if(!raw)return {byWorld:{},last:null};
+            const parsed=JSON.parse(raw);
+            return {
+                byWorld:(parsed&&typeof parsed.byWorld==='object'&&parsed.byWorld)||{},
+                last:parsed?.last||null
+            };
+        }catch(e){
+            console.warn('Failed to read saved LAN codes',e);
+            return {byWorld:{},last:null};
+        }
+    }
+
+    saveLanCodes(data){
+        try{
+            localStorage.setItem('mc_lan_codes_v1',JSON.stringify(data));
+        }catch(e){
+            console.warn('Failed to save LAN codes',e);
+        }
+    }
+
+    /** Stable key for a world, falling back to its name for unsaved worlds. */
+    getWorldCodeKey(world){
+        const w=world||this.minecraft?.world;
+        if(!w)return null;
+        return w.worldId||w.name||null;
+    }
+
+    /** The code this world hosted on last, if any. */
+    getRememberedLanCode(world){
+        const key=this.getWorldCodeKey(world);
+        const data=this.loadLanCodes();
+        if(key&&data.byWorld[key])return data.byWorld[key];
+        // A world with no history of its own does not inherit `last` -- that
+        // would hand two different worlds the same code.
+        return null;
+    }
+
+    rememberLanCode(world,code){
+        if(!code)return;
+        const key=this.getWorldCodeKey(world);
+        const data=this.loadLanCodes();
+        if(key)data.byWorld[key]=code;
+        data.last=code;
+        this.saveLanCodes(data);
+    }
+
+    /** Drops a world's remembered code so the next host picks a fresh one. */
+    forgetLanCode(world){
+        const key=this.getWorldCodeKey(world);
+        if(!key)return;
+        const data=this.loadLanCodes();
+        delete data.byWorld[key];
+        this.saveLanCodes(data);
+    }
+
+    /**
+     * Bedrock-style system popup. Falls back to chat if the GUI stack is not
+     * up yet, so a dialog is never silently swallowed during early startup.
+     */
+    showSystemDialog(text, options = {}) {
+        const dialogs = this.minecraft?.systemDialogs;
+        if (!dialogs) {
+            this.minecraft?.addMessageToChat?.(text);
+            return null;
+        }
+        return dialogs.show(text, options);
+    }
+
+    formatJoinRequestText(hostUsername) {
+        const owner = hostUsername ? `${hostUsername}'s` : "this";
+        return `Requested to join ${owner} world.`;
+    }
+
     showJoinNotification(title, interactive=false, duration=3200) {
         if(this.joinNotice){this.joinNotice.remove();this.joinNotice=null;}
         const notice=document.createElement('div');notice.style.cssText='position:fixed;left:18px;top:18px;z-index:100000;min-width:280px;max-width:390px;padding:14px 16px;background:#5a5a5f;color:#fff;border:1px solid #74747a;border-radius:9px;box-shadow:0 12px 35px #0008;font:600 14px system-ui,sans-serif;transform:translateX(-120%);opacity:0;transition:transform .28s ease,opacity .28s ease;pointer-events:none';
@@ -133,25 +228,111 @@ export default class Multiplayer {
         if(this.pendingJoinRequests.some(r=>r.peerId===peerId))return false;
         this.pendingJoinRequests.push({peerId,username,conn,watcher});if(this.pendingJoinRequests.length===1)this.refreshJoinRequestNotice();return true;
     }
-    cancelJoinRequest(peerId){const first=this.pendingJoinRequests[0]?.peerId===peerId;this.pendingJoinRequests=this.pendingJoinRequests.filter(r=>r.peerId!==peerId);if(first){this.joinHoldTicks=0;this.refreshJoinRequestNotice();}}
+    cancelJoinRequest(peerId){
+        const first=this.pendingJoinRequests[0]?.peerId===peerId;
+        const dropped=this.pendingJoinRequests.filter(r=>r.peerId===peerId);
+        this.pendingJoinRequests=this.pendingJoinRequests.filter(r=>r.peerId!==peerId);
+        if(dropped.length)this.recordMissedJoinRequests(dropped);
+        if(first){this.joinHoldTicks=0;this.refreshJoinRequestNotice();}
+    }
+
+    /**
+     * Remember requests the host never got to. Only reachable from the drop
+     * paths -- an accepted request is shifted off the queue by
+     * acceptPendingJoin() and never passes through here.
+     */
+    recordMissedJoinRequests(requests){
+        for(const req of requests){
+            if(!req)continue;
+            this.missedJoinRequests.push({username:req.username||'Someone',at:Date.now()});
+        }
+        while(this.missedJoinRequests.length>16)this.missedJoinRequests.shift();
+    }
+
+    hasMissedJoinRequests(){return this.missedJoinRequests.length>0;}
+
+    /**
+     * Grants issued to players the host has already accepted. Persisted so a
+     * saved world still opens after the host restarts the game -- otherwise
+     * every entry in the world list would need re-approval on each session.
+     */
+    loadSavedJoinTokens(){
+        try{
+            const raw=localStorage.getItem('mc_issued_join_tokens_v1');
+            if(!raw)return new Map();
+            const obj=JSON.parse(raw);
+            const now=Date.now();
+            return new Map(Object.entries(obj).filter(([,exp])=>exp>now));
+        }catch(e){
+            console.warn('Failed to read issued join tokens',e);
+            return new Map();
+        }
+    }
+
+    saveSavedJoinTokens(){
+        try{
+            localStorage.setItem('mc_issued_join_tokens_v1',JSON.stringify(Object.fromEntries(this.savedJoinTokens)));
+        }catch(e){
+            console.warn('Failed to save issued join tokens',e);
+        }
+    }
+
+    issueSavedJoinToken(){
+        const token=crypto.randomUUID?.()||Math.random().toString(36).slice(2)+Date.now();
+        // 30 days; long enough to behave like a saved server entry.
+        this.savedJoinTokens.set(token,Date.now()+30*24*60*60*1000);
+        this.saveSavedJoinTokens();
+        return token;
+    }
+
+    /** Returns the entries that were cleared so a caller can summarise them. */
+    clearMissedJoinRequests(){
+        const missed=this.missedJoinRequests;
+        this.missedJoinRequests=[];
+        return missed;
+    }
     acceptPendingJoin(){
         const req=this.pendingJoinRequests.shift();if(!req)return;const conn=req.conn||this.connections.get(req.peerId);
         if(conn?.open){
             if(req.watcher){const token=crypto.randomUUID?.()||Math.random().toString(36).slice(2)+Date.now();this.approvedJoinTokens.set(token,Date.now()+120000);conn.send({type:'watch_join_approved',code:this.lanCode,token});}
-            else{conn.send({type:'join_approved'});conn._sendWorldInfo?.();}
+            else{
+                // The approval now also hands over a reusable grant plus the
+                // labelling the client needs to show this world in its list.
+                conn.send({
+                    type:'join_approved',
+                    token:this.issueSavedJoinToken(),
+                    code:this.lanCode,
+                    hostUsername:this.minecraft.settings.username||'Player',
+                    worldName:this.minecraft.world?.name||null
+                });
+                conn._sendWorldInfo?.();
+            }
         }
         this.suppressJoinKeyUntilRelease=true;this.joinHoldTicks=0;this.refreshJoinRequestNotice();
     }
 
-    async host(world) {
+    /**
+     * @param {World} world
+     * @param {object} [attempt] Internal retry state, carried across the
+     *   recursive retry in the unavailable-id handler.
+     */
+    async host(world, attempt = null) {
         if (this.connected) {
             if (this.isHosting) return this.lanCode;
             throw new Error("A joined player cannot host the current LAN world.");
         }
 
-        this.lanCode = this.generateCode();
+        const state = attempt || { forceNew: false, retriedSame: false };
+
+        // Reuse this world's previous code when we have one, so other players'
+        // saved entries keep working.
+        const remembered = state.forceNew ? null : this.getRememberedLanCode(world);
+        state.usingRemembered = !!remembered;
+
+        this.lanCode = remembered || this.generateCode();
         const peerId = this.getPeerId(this.lanCode);
-        console.log("Hosting LAN Game via PeerJS. Code: " + this.lanCode);
+        console.log("Hosting LAN Game via PeerJS. Code: " + this.lanCode
+            + (remembered ? " (reused)" : " (new)"));
         
         if (this.room) {
             try {
@@ -171,6 +352,9 @@ export default class Multiplayer {
             this.peer.on('open', (id) => {
                 this.connected = true;
                 this.isHosting = true;
+                // Only remember codes that actually came up, so a code that
+                // failed to register is never offered again.
+                this.rememberLanCode(world, this.lanCode);
                 this.minecraft.broadcastMedia?.attachPeer(this.peer);
                 this.minecraft.addMessageToChat("§eLAN Game hosted. Code: " + this.lanCode);
                 
@@ -224,7 +408,27 @@ export default class Multiplayer {
                     this.peer = null;
                     this.connected = false;
                     this.lanCode = null;
-                    this.host(world).then(resolve).catch(reject);
+
+                    // The usual cause of a remembered code being taken is our
+                    // own peer from the previous session not having expired on
+                    // the signalling server yet. Give it one delayed retry
+                    // before abandoning the code, otherwise a simple reload
+                    // would churn the code and break every saved entry --
+                    // exactly the case reuse exists for.
+                    if (state.usingRemembered && !state.retriedSame) {
+                        state.retriedSame = true;
+                        console.warn("LAN code " + peerId + " busy; retrying once before rotating.");
+                        setTimeout(() => {
+                            this.host(world, state).then(resolve).catch(reject);
+                        }, 1500);
+                        return;
+                    }
+
+                    // Genuinely taken: rotate, and drop the stale memory so we
+                    // do not retry it on every future host.
+                    if (state.usingRemembered) this.forgetLanCode(world);
+                    state.forceNew = true;
+                    this.host(world, state).then(resolve).catch(reject);
                 } else {
                     this.connected = false;
                     reject(err);
@@ -233,10 +437,29 @@ export default class Multiplayer {
         });
     }
 
-    async join(code) {
+    /**
+     * @param {string} code LAN code.
+     * @param {object} [options]
+     * @param {boolean} [options.enterOnApproval] Drop into the world on
+     *   approval instead of just saving it to the world list. Set when the
+     *   join was launched from a saved entry.
+     * @param {string} [options.approvalToken] Reusable grant from a saved
+     *   entry, which lets the host skip the approval prompt.
+     */
+    async join(code, options = {}) {
         if (!code) return;
         this.disconnect();
-        
+
+        this.enterOnApproval = options.enterOnApproval === true;
+        this.savedApprovalToken = options.approvalToken || null;
+        // Per-server display name: the saved entry can override the global
+        // username for just this world, so you can join a friend's server
+        // under the name they know you by.
+        this.joinUsername = options.username
+            ? String(options.username).replace(/[\u00A7\u0000-\u001F]/g, "").trim().slice(0, 16) || null
+            : null;
+        this.suppressWorldLoad = false;
+
         this.lanCode = code.toUpperCase();
         const peerId = this.getPeerId(this.lanCode);
         console.log("Joining LAN Game via PeerJS: " + this.lanCode);
@@ -257,6 +480,10 @@ export default class Multiplayer {
 
         return new Promise((resolve, reject) => {
             let settled = false;
+            // Set once the host accepts our data connection. After that we
+            // are in the approval flow and a wobble on the signalling socket
+            // must not tear the whole join down.
+            let dialOpened = false;
             const fail = (error) => {
                 if (settled) return;
                 settled = true;
@@ -280,23 +507,46 @@ export default class Multiplayer {
                 
                 conn.on('open', () => {
                     if (settled) return;
-                    let username = this.minecraft.settings.username || "Player";
-                    if (window.websim && window.websim.user && window.websim.user.username && username === "Player") {
+                    dialOpened = true;
+                    let username = this.joinUsername || this.minecraft.settings.username || "Player";
+                    if (!this.joinUsername && window.websim && window.websim.user && window.websim.user.username && username === "Player") {
                         username = window.websim.user.username;
                     }
 
-                    const approvalToken=new URLSearchParams(location.search).get('approval');
+                    // A saved entry supplies its own grant; the URL parameter
+                    // remains the fallback for invite links.
+                    const approvalToken=this.savedApprovalToken||new URLSearchParams(location.search).get('approval');
                     conn.send({type:"join_request",username,approvalToken});
-                    this.showJoinNotification("Requested to Join");
-                    this.pendingJoinResolve=()=>{if(settled)return;settled=true;this.connected=true;resolve();};
+                    // Re-entering a saved world is not a request, so only the
+                    // approval flow opens the "requested to join" dialog. The
+                    // host's name is unknown here -- we only have a LAN code --
+                    // so join_pending fills it in.
+                    if(!this.enterOnApproval){
+                        this.joinDialogId = this.showSystemDialog(this.formatJoinRequestText(null), {duration: 6000});
+                    }
+                    this.pendingJoinResolve=(result)=>{if(settled)return;settled=true;this.connected=!!(result?.entered!==false);resolve(result||{entered:true});};
                     this.pendingJoinUsername=username;
                 });
                 conn.on('error', fail);
             });
 
             this.peer.on('error', (err) => {
+                const type = err && err.type;
+
+                // Everything except a dead dial is survivable once the host
+                // has us; treating every Peer-level error as fatal was
+                // killing joins that were already in progress.
+                if (dialOpened && type !== 'peer-unavailable') {
+                    console.warn("Non-fatal PeerJS error during join:", err);
+                    return;
+                }
+
                 console.error("Join PeerJS Error:", err);
-                this.minecraft.addMessageToChat("§cCould not find LAN game with code: " + this.lanCode);
+                if (type === 'peer-unavailable') {
+                    this.minecraft.addMessageToChat("§cNo one is hosting LAN code: " + this.lanCode);
+                } else {
+                    this.minecraft.addMessageToChat("§cConnection problem while joining: " + (type || 'unknown'));
+                }
                 fail(err);
             });
 
@@ -320,7 +570,11 @@ export default class Multiplayer {
         conn.on('close', () => {
             if (this.isHosting) {
                 this.connections.delete(conn.peer);
-                const before=this.pendingJoinRequests.length;this.pendingJoinRequests=this.pendingJoinRequests.filter(r=>r.peerId!==conn.peer);if(before!==this.pendingJoinRequests.length){this.joinHoldTicks=0;this.refreshJoinRequestNotice();}
+                // A requester that disconnects before the host accepts is the
+                // main way a join request gets missed.
+                const dropped=this.pendingJoinRequests.filter(r=>r.peerId===conn.peer);
+                this.pendingJoinRequests=this.pendingJoinRequests.filter(r=>r.peerId!==conn.peer);
+                if(dropped.length){this.recordMissedJoinRequests(dropped);this.joinHoldTicks=0;this.refreshJoinRequestNotice();}
                 // Remove player from presence
                 delete this.presence[conn.peer];
                 this.handlePresenceUpdate(this.presence);
@@ -334,6 +588,22 @@ export default class Multiplayer {
     }
 
     handleIncomingData(data, fromPeerId) {
+        // Liveness probe from someone's saved world list. A probe is not a
+        // player, so drop it back out of the connection table before replying.
+        if(data?.type==='lan_ping'&&this.isHosting){
+            const conn=this.connections.get(fromPeerId);
+            this.connections.delete(fromPeerId);
+            try{
+                conn?.send({
+                    type:'lan_pong',
+                    hostUsername:this.minecraft.settings.username||'Player',
+                    worldName:this.minecraft.world?.name||null,
+                    players:this.connections.size+1
+                });
+            }catch(_){}
+            setTimeout(()=>{try{conn?.close();}catch(_){}},500);
+            return;
+        }
         if(data?.type==='watch_join_request'&&this.isHosting){
             const conn=this.minecraft.broadcastMedia?.viewerDataConnections?.get(fromPeerId);
             const queued=!!conn&&this.queueJoinRequest(fromPeerId,data.username,conn,true);
@@ -354,13 +624,77 @@ export default class Multiplayer {
             return;
         }
         if(data?.type==='join_request'&&this.isHosting){
-            const token=String(data.approvalToken||''),expiry=this.approvedJoinTokens.get(token);
-            if(token&&expiry>Date.now()){this.approvedJoinTokens.delete(token);const conn=this.connections.get(fromPeerId);if(conn?.open){conn.send({type:'join_approved'});conn._sendWorldInfo?.();}return;}
+            const token=String(data.approvalToken||'');
+            const oneShotExpiry=this.approvedJoinTokens.get(token);
+            const savedExpiry=this.savedJoinTokens.get(token);
+            const now=Date.now();
+            // One-shot grants are consumed; saved-world grants are reusable so
+            // the entry keeps working every session until it expires.
+            const accepted=(token&&oneShotExpiry>now)||(token&&savedExpiry>now);
+            if(accepted){
+                if(oneShotExpiry>now)this.approvedJoinTokens.delete(token);
+                const conn=this.connections.get(fromPeerId);
+                if(conn?.open){
+                    conn.send({
+                        type:'join_approved',
+                        token:savedExpiry>now?token:this.issueSavedJoinToken(),
+                        code:this.lanCode,
+                        hostUsername:this.minecraft.settings.username||'Player',
+                        worldName:this.minecraft.world?.name||null
+                    });
+                    conn._sendWorldInfo?.();
+                }
+                return;
+            }
             this.queueJoinRequest(fromPeerId,data.username);
+            // Tell the requester whose world they are waiting on. Older hosts
+            // never send this, in which case the client keeps its neutral
+            // "this world" phrasing.
+            const pendingConn=this.connections.get(fromPeerId);
+            if(pendingConn?.open)pendingConn.send({type:'join_pending',hostUsername:this.minecraft.settings.username||'Player'});
+            return;
+        }
+        if(data?.type==='join_pending'&&!this.isHosting){
+            if(this.joinDialogId!=null)this.minecraft.systemDialogs?.setText(this.joinDialogId,this.formatJoinRequestText(data.hostUsername));
+            this.pendingHostUsername=data.hostUsername||null;
             return;
         }
         if(data?.type==='join_approved'&&!this.isHosting){
-            const username=this.pendingJoinUsername||this.minecraft.settings.username||'Player';this.hostConn?.send({type:'client_join',username});this.pendingJoinResolve?.();this.pendingJoinResolve=null;return;
+            const username=this.pendingJoinUsername||this.minecraft.settings.username||'Player';
+            const hostName=data.hostUsername||this.pendingHostUsername||null;
+
+            // Remember the world either way, so an approval always leaves
+            // something behind in the player's list.
+            const entry=this.minecraft.remoteWorlds?.add({
+                code:data.code||this.lanCode,
+                hostUsername:hostName||'Unknown',
+                worldName:data.worldName||null,
+                token:data.token||null
+            });
+            if(entry&&this.minecraft.remoteWorlds)entry.status='found',entry.lastSeen=Date.now(),entry.lastChecked=performance.now();
+
+            if(this.joinDialogId!=null){this.minecraft.systemDialogs?.dismiss(this.joinDialogId);this.joinDialogId=null;}
+            const owner=hostName?`${hostName}'s`:'the';
+
+            if(this.enterOnApproval){
+                this.hostConn?.send({type:'client_join',username});
+                this.showSystemDialog(`Joining ${owner} world.`,{duration:2500});
+                this.pendingJoinResolve?.();this.pendingJoinResolve=null;
+                return;
+            }
+
+            // Approval alone no longer drops you into the world; it adds the
+            // host to your world list and leaves the connection closed.
+            // The host sends world_info straight after approving, so block the
+            // load before tearing the connection down.
+            this.suppressWorldLoad=true;
+            this.showSystemDialog(`${owner} world was added to your worlds.`,{duration:4500});
+            // Resolve first: it flips the promise's settled flag, so the error
+            // events that disconnect() may raise cannot reject afterwards.
+            const resolve=this.pendingJoinResolve;this.pendingJoinResolve=null;
+            resolve?.({entered:false,entry});
+            this.disconnect();
+            return;
         }
         // Relay messages if host
         if (this.isHosting) {
@@ -403,6 +737,27 @@ export default class Multiplayer {
                 }
             }
 
+            // Camera operations are host-authoritative and permission-gated.
+            if (data.type === "camera_create" || data.type === "camera_update" || data.type === "camera_remove" || data.type === "broadcast_state") {
+                const camera = perms.camera || {};
+                if (data.type === "camera_create" && !camera.create) return;
+                if ((data.type === "camera_update" || data.type === "camera_remove") && !camera.edit) return;
+                if (data.type === "broadcast_state") {
+                    const current = this.minecraft.cameraManager?.session;
+                    const sourceChanged = current && data.state?.sourceId !== current.sourceId;
+                    const activeChanged = current && !!data.state?.active !== !!current.active;
+                    if ((sourceChanged && !camera.cut) || (activeChanged && !camera.stream)) return;
+                }
+                const cm = this.minecraft.cameraManager;
+                if (data.type === "camera_create" && cm) cm.createCamera(data.camera, false);
+                if (data.type === "camera_update" && cm) cm.updateCamera(data.camera.id, data.camera, false);
+                if (data.type === "camera_remove" && cm) cm.removeCamera(data.camera.id, false);
+                if (data.type === "broadcast_state" && cm) {
+                    if (data.state?.sourceId && data.state.sourceId !== cm.session.sourceId) cm.session.select(data.state.sourceId);
+                    if (!!data.state?.active !== !!cm.session.active) cm.setBroadcasting(!!data.state.active);
+                }
+            }
+
             // Relay position, chat, presence, and block batches
             // Commands are handled by the host and must not be echoed as chat.
             if (data.type === "pos" || (data.type === "chat" && !isCommandMessage) ||
@@ -419,6 +774,9 @@ export default class Multiplayer {
         }
 
         if (data.type === "world_info" && !this.isHosting) {
+            // An approval that only saves the world to the list must not load
+            // it, and the host sends world_info regardless.
+            if (this.suppressWorldLoad) return;
             const world = new World(this.minecraft, data.seed, "mp_" + this.lanCode, data.gameMode || 0);
             world.worldType = data.worldType !== undefined ? data.worldType : 0;
             if (Array.isArray(data.superflatLayers) && data.superflatLayers.length > 0) {
@@ -444,6 +802,14 @@ export default class Multiplayer {
             this.minecraft.loadWorld(world);
         } else if (data.type === "pos") {
             this.handlePositionUpdate({ ...data, clientId: fromPeerId });
+        } else if (data.type === "player_damage") {
+            this.handlePlayerDamage(data, fromPeerId);
+        } else if (data.type === "gamerules") {
+            // Only the host may change rules, so clients accept this from the
+            // host connection and nowhere else.
+            if (!this.isHosting && data.gr && this.minecraft?.world) {
+                Object.assign(this.minecraft.world.gameRules, data.gr);
+            }
         } else if (data.type === "presence") {
             this.presence[fromPeerId] = data.presence;
             this.handlePresenceUpdate(this.presence);
@@ -507,10 +873,25 @@ export default class Multiplayer {
                     this.minecraft.player.flying = false;
                 }
             }
+            // Co-producer changes should take effect immediately if Camera
+            // Studio is already open on the client.
+            if (this.minecraft.currentScreen?.constructor?.name === "GuiCameraStudio") {
+                this.minecraft.currentScreen.init();
+            }
         } else if (data.type === "tile_entity_sync") {
             if (this.minecraft.world) {
                 this.minecraft.world.setTileEntity(data.x, data.y, data.z, data.data);
                 if (this.minecraft.worldRenderer) this.minecraft.worldRenderer.flushRebuild = true;
+
+                // A screen standing open on this block (a chest someone else
+                // is also using) has its own copy of the contents and would
+                // otherwise show stale items and then overwrite them.
+                for (const scr of [this.minecraft.currentScreen, this.minecraft.currentScreen2]) {
+                    if (scr && typeof scr.onTileEntityUpdated === "function") {
+                        try { scr.onTileEntityUpdated(data.x, data.y, data.z, data.data); }
+                        catch (e) { console.warn("Screen refused a tile entity update:", e); }
+                    }
+                }
             }
             if (this.isHosting) {
                 this.broadcast(data, fromPeerId);
@@ -654,7 +1035,87 @@ export default class Multiplayer {
     }
 
     sendCameraSnapshot(conn) {
-        if (conn?.open && this.minecraft.cameraManager) conn.send({type:"camera_snapshot", cameras:this.minecraft.cameraManager.serialize()});
+        if (!conn?.open || !this.minecraft.cameraManager) return;
+        const cp=this.getPlayerPermissions(conn.peer).camera || {};
+        const cameras=this.minecraft.cameraManager.serialize().filter(camera => cp.see && (cp.feeds === "*" || !!cp.feeds?.[camera.id]));
+        conn.send({type:"camera_snapshot", cameras});
+    }
+
+    isPvpEnabled() {
+        if (!this.connected) return false;
+        return this.minecraft?.world?.gameRules?.pvp !== false;
+    }
+
+    /**
+     * PVP is victim-authoritative: a player's health, armour, effects and
+     * death are all owned by their own client, so an attacker reports the hit
+     * and the victim decides what it costs. The alternative -- letting the
+     * attacker mutate a RemotePlayerEntity -- would desync instantly, because
+     * that entity is only a render proxy and carries no real health.
+     *
+     * The message is broadcast rather than addressed: the existing host relay
+     * already whitelists `player_damage`, and bystanders use it to play the
+     * hurt flash on the victim.
+     */
+    sendPlayerDamage(remotePlayer, damage, attacker) {
+        if (!this.isPvpEnabled()) return;
+        if (!remotePlayer?.id || !attacker) return;
+
+        const dx = remotePlayer.x - attacker.x;
+        const dz = remotePlayer.z - attacker.z;
+        const length = Math.hypot(dx, dz) || 1;
+
+        const payload = {
+            type: "player_damage",
+            target: remotePlayer.id,
+            from: this.peer?.id || null,
+            attacker: attacker.username || this.minecraft.settings.username || "Player",
+            damage: Number(damage) || 1,
+            kx: dx / length,
+            kz: dz / length
+        };
+
+        this.broadcast(payload);
+
+        // Immediate local feedback; the victim still decides the real damage.
+        remotePlayer.hurtTime = 10;
+        this.minecraft.soundManager?.playSound("random.hit", remotePlayer.x, remotePlayer.y, remotePlayer.z, 0.6, 1.0);
+    }
+
+    handlePlayerDamage(data, fromPeerId) {
+        const myId = this.peer?.id || null;
+        const victimIsMe = !!(data.target && myId && data.target === myId);
+
+        if (!victimIsMe) {
+            // Someone else was hit: flash them so onlookers see the fight.
+            const victim = this.remotePlayers.get(data.target);
+            if (victim) victim.hurtTime = 10;
+            return;
+        }
+
+        const player = this.minecraft.player;
+        if (!player || !this.isPvpEnabled()) return;
+        // Spectators and creative players are not valid victims.
+        if (player.gameMode === 1 || player.gameMode === 3) return;
+
+        // Invulnerability frames are what stop a fast attacker stacking hits.
+        // takeHit returns nothing, so the guard is checked here instead.
+        if (player.hurtTime > 0 || player.health <= 0) return;
+
+        const attackerEntity = this.remotePlayers.get(data.from || fromPeerId) || null;
+        const amount = Math.max(0, Number(data.damage) || 0);
+
+        // takeHit applies armour, knockback, the death screen and the death
+        // message (which it broadcasts), so the hit just needs handing over.
+        player.takeHit(attackerEntity, amount, "player");
+
+        // Knockback normally comes from the attacker's position, but presence
+        // can lag behind a new joiner, so fall back to the sent direction.
+        if (!attackerEntity) {
+            player.motionX -= (Number(data.kx) || 0) * 0.4;
+            player.motionZ -= (Number(data.kz) || 0) * 0.4;
+            player.motionY += 0.2;
+        }
     }
 
     broadcast(data, excludePeerId = null) {
@@ -675,10 +1136,19 @@ export default class Multiplayer {
             this.saveClientData();
         }
         
-        if (this.peer) {
-            this.peer.destroy();
-            this.peer = null;
+        // Give the final client_save packet a short delivery window before
+        // tearing down PeerJS. Previously a disconnect could destroy the
+        // connection immediately, losing the departing player's position and
+        // inventory on the host.
+        const peerToClose = this.peer;
+        const hostConnToClose = this.hostConn;
+        if (peerToClose) {
+            setTimeout(() => {
+                try { hostConnToClose?.close(); } catch (_) {}
+                try { peerToClose.destroy(); } catch (_) {}
+            }, 120);
         }
+        this.peer = null;
 
         this.connected = false;
         this.isHosting = false;
@@ -715,16 +1185,24 @@ export default class Multiplayer {
             const distSq = (p.x - this.lastSentX)**2 + (p.y - this.lastSentY)**2 + (p.z - this.lastSentZ)**2;
             const yawDiff = Math.abs(p.rotationYaw - this.lastSentYaw);
 
-            if (distSq > 0.0001 || yawDiff > 0.1) {
+            // Equipment rides on "pos" and "presence" because the host only
+            // relays a whitelist of types, and a brand new type would never
+            // reach the other clients.
+            const eq = this.getMyEquipment();
+            const eqChanged = this.equipmentChanged(eq);
+
+            if (distSq > 0.0001 || yawDiff > 0.1 || eqChanged) {
                 const posData = {
                     type: "pos",
                     x: p.x, y: p.y, z: p.z,
                     yaw: p.rotationYaw, pitch: p.rotationPitch,
                     sneaking: p.sneaking,
                     isCameraman: !!p.isCameraman, cameraMode: p.cameraMode || "operator",
-                    roll: p.cameraRoll || 0, fov: p.cameraFov || this.minecraft.settings.fov, broadcasting: !!p.broadcasting
+                    roll: p.cameraRoll || 0, fov: p.cameraFov || this.minecraft.settings.fov, broadcasting: !!p.broadcasting,
+                    eq
                 };
                 this.broadcast(posData);
+                this._lastSentEquipment = eq;
                 this.lastPosUpdate = now;
                 this.lastSentX = p.x; this.lastSentY = p.y; this.lastSentZ = p.z;
                 this.lastSentYaw = p.rotationYaw;
@@ -752,6 +1230,17 @@ export default class Multiplayer {
                 this.mobUpdateTimer = now;
             }
         }
+    }
+
+    syncItems() {
+        if (!this.isHosting || !this.minecraft.world) return;
+        const items = this.minecraft.world.droppedItems.map(item => ({
+            sId: item.serverID,
+            id: item.blockId,
+            x: item.x, y: item.y, z: item.z,
+            count: item.count
+        }));
+        this.broadcast({ type: "items_sync", items });
     }
 
     syncMobs() {
@@ -830,7 +1319,10 @@ export default class Multiplayer {
                 item = world.droppedItems.find(it => it.serverID === data.sId);
                 if (item) {
                     this.remoteItems.set(data.sId, item);
-                    return;
+                    // continue, NOT return: returning here abandoned every
+                    // remaining item in the sync, so a single already-known
+                    // item stopped the rest of the ground from appearing.
+                    continue;
                 }
 
                 // Create new networked item
@@ -880,6 +1372,9 @@ export default class Multiplayer {
                 id: world.getBlockAt(data.x, data.y, data.z),
                 m: world.getBlockDataAt(data.x, data.y, data.z)
             }, fromPeerId);
+            // Item sync used to wait for the periodic mob tick (up to three
+            // seconds), and the breaker could miss the authoritative drop.
+            this.syncItems();
             return;
         }
 
@@ -912,6 +1407,7 @@ export default class Multiplayer {
             // Re-broadcast authoritative states, including regenerated
             // One Block replacements.
             this.broadcast({...data, b: syncedBlocks}, fromPeerId);
+            this.syncItems();
             return;
         }
 
@@ -954,6 +1450,27 @@ export default class Multiplayer {
         if (this.minecraft.worldRenderer) this.minecraft.worldRenderer.flushRebuild = true;
     }
 
+    /** Held item, offhand and the four armour slots, in a compact shape. */
+    getMyEquipment() {
+        const inv = this.minecraft.player && this.minecraft.player.inventory;
+        if (!inv) return { h: 0, o: 0, a: [0, 0, 0, 0] };
+        const armorId = i => {
+            const st = typeof inv.getArmor === "function" ? inv.getArmor(i) : null;
+            return (st && st.id) | 0;
+        };
+        return {
+            h: (typeof inv.getItemInSelectedSlot === "function" ? inv.getItemInSelectedSlot() : 0) | 0,
+            o: (inv.offhand && inv.offhand.id) | 0,
+            a: [armorId(0), armorId(1), armorId(2), armorId(3)]
+        };
+    }
+
+    equipmentChanged(eq) {
+        const prev = this._lastSentEquipment;
+        if (!prev) return true;
+        return prev.h !== eq.h || prev.o !== eq.o || prev.a.some((v, i) => v !== eq.a[i]);
+    }
+
     updateMyPresence() {
         const p = this.minecraft.player;
         const presence = {
@@ -961,7 +1478,8 @@ export default class Multiplayer {
             attributeScale: p.attributeScale,
             username: this.minecraft.settings.username || "Player",
             isCameraman: !!p.isCameraman, cameraMode: p.cameraMode || "operator",
-            roll: p.cameraRoll || 0, fov: p.cameraFov || this.minecraft.settings.fov, broadcasting: !!p.broadcasting
+            roll: p.cameraRoll || 0, fov: p.cameraFov || this.minecraft.settings.fov, broadcasting: !!p.broadcasting,
+            eq: this.getMyEquipment()
         };
         this.broadcast({ type: "presence", presence });
     }
@@ -985,6 +1503,7 @@ export default class Multiplayer {
             remotePlayer.skin = data.skin;
             remotePlayer.isCameraman = !!data.isCameraman; remotePlayer.cameraMode = data.cameraMode || "operator";
             remotePlayer.cameraRoll = data.roll || 0; remotePlayer.cameraFov = data.fov || 70; remotePlayer.broadcasting = !!data.broadcasting;
+            if (data.eq && typeof remotePlayer.setEquipment === "function") remotePlayer.setEquipment(data.eq);
         }
 
         for (const [peerId, entity] of this.remotePlayers) {
@@ -1121,8 +1640,17 @@ export default class Multiplayer {
     handleClientSave(data) {
         this.minecraft.world.playerData[data.username] = {
             inventory: data.inventory, armor: data.armor,
-            pos: data.pos, gameMode: data.gameMode
+            pos: data.pos, gameMode: data.gameMode,
+            savedAt: Date.now()
         };
+        // A departing guest's data must survive a host refresh/crash, not just
+        // remain in memory until the next periodic autosave.
+        if (!this._playerDataSavePending) {
+            this._playerDataSavePending = true;
+            Promise.resolve(this.minecraft.world.saveWorldData?.()).finally(() => {
+                this._playerDataSavePending = false;
+            });
+        }
     }
 
     handleClientLoad(data) {
@@ -1131,12 +1659,17 @@ export default class Multiplayer {
         const d = data.data;
         if (d.pos) p.setPosition(d.pos.x, d.pos.y, d.pos.z);
         if (d.inventory) d.inventory.forEach((item, i) => { if(i < p.inventory.items.length) p.inventory.items[i] = item; });
+        if (d.armor) d.armor.forEach((item, i) => { if(i < p.inventory.armor.length) p.inventory.armor[i] = item; });
+        if (Number.isFinite(d.gameMode)) p.gameMode = d.gameMode;
         this.minecraft.addMessageToChat("§eRestored player data from host.");
     }
 
     getPlayerPermissions(clientId) {
         if (!this.permissions.has(clientId)) {
-            this.permissions.set(clientId, { canBuild: true, canCommand: true, canFly: false });
+            this.permissions.set(clientId, {
+                canBuild: true, canCommand: true, canFly: false,
+                camera: { see: false, edit: false, create: false, cut: false, stream: false, feeds: {} }
+            });
         }
         return this.permissions.get(clientId);
     }
@@ -1147,6 +1680,42 @@ export default class Multiplayer {
         perms[key] = value;
         const conn = this.connections.get(clientId);
         if (conn) conn.send({ type: "set_permissions", perms });
+    }
+
+    cameraPermissions() {
+        if (this.isHosting || !this.connected) return { see: true, edit: true, create: true, cut: true, stream: true, feeds: "*" };
+        return this._localPermissions?.camera || { see: false, edit: false, create: false, cut: false, stream: false, feeds: {} };
+    }
+
+    setCameraPermission(clientId, key, value) {
+        if (!this.isHosting) return;
+        const perms = this.getPlayerPermissions(clientId);
+        perms.camera = perms.camera || { see: false, edit: false, create: false, cut: false, stream: false, feeds: {} };
+        if (key === "feeds") perms.camera.feeds = value || {};
+        else perms.camera[key] = !!value;
+        const conn = this.connections.get(clientId);
+        if (conn) { conn.send({ type: "set_permissions", perms }); this.sendCameraSnapshot(conn); }
+    }
+
+    makeCoProducer(clientId) {
+        if (!this.isHosting) return;
+        const perms = this.getPlayerPermissions(clientId);
+        perms.camera = { see: true, edit: true, create: true, cut: true, stream: true, feeds: "*" };
+        const conn = this.connections.get(clientId);
+        if (conn) { conn.send({ type: "set_permissions", perms }); this.sendCameraSnapshot(conn); }
+    }
+
+    removeCoProducer(clientId) {
+        if (!this.isHosting) return;
+        const perms = this.getPlayerPermissions(clientId);
+        perms.camera = { see: false, edit: false, create: false, cut: false, stream: false, feeds: {} };
+        const conn = this.connections.get(clientId);
+        if (conn) { conn.send({ type: "set_permissions", perms }); this.sendCameraSnapshot(conn); }
+    }
+
+    isCoProducer(clientId) {
+        const camera = this.getPlayerPermissions(clientId).camera;
+        return !!(camera && camera.see && camera.edit && camera.create && camera.cut && camera.stream && camera.feeds === "*");
     }
 
     getPlayerGameMode(clientId) {

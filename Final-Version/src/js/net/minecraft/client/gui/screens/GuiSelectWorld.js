@@ -1,9 +1,11 @@
 import GuiScreen from "../GuiScreen.js";
+import { describeJoinError } from "../../../util/JoinErrors.js";
 import GuiButton from "../widgets/GuiButton.js";
 import GuiCreateWorld from "./GuiCreateWorld.js";
 import World from "../../world/World.js";
 import GuiTextField from "../widgets/GuiTextField.js";
 import MathHelper from "../../../util/MathHelper.js";
+import WorldArchive from "../../world/storage/WorldArchive.js";
 
 export default class GuiSelectWorld extends GuiScreen {
 
@@ -43,9 +45,20 @@ export default class GuiSelectWorld extends GuiScreen {
         }
         // Preserve scroll position across re-initializations (e.g. window resize)
         if (this.scrollY === undefined) this.scrollY = 0;
-        
+
+        // Worlds we have been approved to join. They live below the local
+        // saves in the same list, and re-check the host every time this screen
+        // is opened so a stale entry shows as unreachable rather than hanging
+        // on a dead code.
+        const remoteWorlds = this.minecraft.remoteWorlds;
+        this.remoteEntries = remoteWorlds ? remoteWorlds.list() : [];
+        if (remoteWorlds && !this._pingedOnOpen) {
+            this._pingedOnOpen = true;
+            remoteWorlds.pingAll();
+        }
+
         this.itemHeight = 36;
-        this.totalListHeight = this.savedWorlds.length * this.itemHeight;
+        this.totalListHeight = (this.savedWorlds.length + this.remoteEntries.length) * this.itemHeight;
 
         let y = this.height - 52;
         
@@ -56,13 +69,19 @@ export default class GuiSelectWorld extends GuiScreen {
         const maxScroll = Math.max(0, this.totalListHeight - viewH);
         this.scrollY = MathHelper.clamp(this.scrollY, 0, maxScroll);
         
+        const selected = this.getSelected();
+
         // Row 1
         this.buttonPlayWorld = new GuiButton("Play Selected World", this.width / 2 - 154, y, 150, 20, () => {
-            if (this.selectedWorldIndex >= 0 && this.selectedWorldIndex < this.savedWorlds.length) {
-                this.loadAndPlayWorld(this.savedWorlds[this.selectedWorldIndex]);
-            }
+            const sel = this.getSelected();
+            if (!sel) return;
+            if (sel.type === "local") this.loadAndPlayWorld(sel.info);
+            else this.joinRemoteWorld(sel.info);
         });
-        this.buttonPlayWorld.setEnabled(this.selectedWorldIndex >= 0);
+        // A remote world is only playable once its host has answered a ping.
+        this.buttonPlayWorld.setEnabled(
+            !!selected && (selected.type === "local" || selected.info.status === "found")
+        );
         this.buttonList.push(this.buttonPlayWorld);
 
         this.buttonList.push(new GuiButton("Create New World", this.width / 2 + 4, y, 150, 20, () => {
@@ -73,24 +92,34 @@ export default class GuiSelectWorld extends GuiScreen {
 
         // Row 2
         this.buttonEdit = new GuiButton("Edit", this.width / 2 - 154, y, 72, 20, () => {
-            if (this.selectedWorldIndex >= 0 && this.selectedWorldIndex < this.savedWorlds.length) {
-                this.minecraft.displayScreen(new GuiEditWorld(this, this.savedWorlds[this.selectedWorldIndex]));
+            const sel = this.getSelected();
+            if (sel && sel.type === "local") {
+                this.minecraft.displayScreen(new GuiEditWorld(this, sel.info));
             }
         });
-        this.buttonEdit.setEnabled(this.selectedWorldIndex >= 0);
+        // Editing and re-creating need local world data, which we do not have
+        // for someone else's world.
+        this.buttonEdit.setEnabled(!!selected && selected.type === "local");
         this.buttonList.push(this.buttonEdit);
-        
+
         this.buttonDelete = new GuiButton("Delete", this.width / 2 - 78, y, 72, 20, () => {
-            if (this.selectedWorldIndex >= 0 && this.selectedWorldIndex < this.savedWorlds.length) {
-                this.deleteWorld(this.savedWorlds[this.selectedWorldIndex]);
+            const sel = this.getSelected();
+            if (!sel) return;
+            if (sel.type === "local") {
+                this.deleteWorld(sel.info);
+            } else {
+                this.minecraft.remoteWorlds?.remove(sel.info.code);
+                this.selectedWorldIndex = -1;
+                this.init();
             }
         });
-        this.buttonDelete.setEnabled(this.selectedWorldIndex >= 0);
+        this.buttonDelete.setEnabled(!!selected);
         this.buttonList.push(this.buttonDelete);
         
         this.buttonRecreate = new GuiButton("Re-Create", this.width / 2 + 4, y, 72, 20, () => {
-            if (this.selectedWorldIndex >= 0 && this.selectedWorldIndex < this.savedWorlds.length) {
-                const info = this.savedWorlds[this.selectedWorldIndex];
+            const sel = this.getSelected();
+            if (sel && sel.type === "local") {
+                const info = sel.info;
                 import("../../world/storage/WorldStorage.js").then(module => {
                     module.default.loadWorld(info.id).then(data => {
                         if (data) {
@@ -107,15 +136,75 @@ export default class GuiSelectWorld extends GuiScreen {
                 });
             }
         });
-        this.buttonRecreate.setEnabled(this.selectedWorldIndex >= 0);
+        this.buttonRecreate.setEnabled(!!selected && selected.type === "local");
         this.buttonList.push(this.buttonRecreate);
         
         this.buttonList.push(new GuiButton("Cancel", this.width / 2 + 82, y, 72, 20, () => {
             this.minecraft.displayScreen(this.previousScreen);
         }));
 
+        // Force a fresh liveness check for every saved remote world. The list
+        // also performs periodic checks while open, but this gives players an
+        // explicit refresh action after waking a host or changing networks.
+        this.buttonList.push(new GuiButton("Refresh Servers", this.width / 2 - 75, y + 24, 150, 20, () => {
+            this.minecraft.remoteWorlds?.pingAll(true);
+        }));
+
         this.thumbnailTexture = this.getTexture("../../worldthumbnail (6).png");
         this.iconsTexture = this.getTexture("gui/icons.png");
+
+    }
+
+    /**
+     * Resolved per frame rather than cached at init: these are lazy-loaded
+     * assets, so a screen opened early would otherwise latch onto the 1x1
+     * placeholder for its whole lifetime.
+     */
+    getLanTexture(name) {
+        const texture = this.getTexture("../../" + name);
+        // The loader hands out a 1x1 magenta canvas for anything not yet in.
+        if (!texture || (texture.width <= 1 && texture.height <= 1)) return null;
+        return texture;
+    }
+
+    /** Combined index: local saves first, then remote worlds. */
+    getSelected() {
+        const i = this.selectedWorldIndex;
+        if (i < 0) return null;
+        if (i < this.savedWorlds.length) {
+            return { type: "local", info: this.savedWorlds[i], index: i };
+        }
+        const r = i - this.savedWorlds.length;
+        const remote = this.remoteEntries || [];
+        if (r < remote.length) return { type: "remote", info: remote[r], index: i };
+        return null;
+    }
+
+    /** Screen rect of a remote row's join button, or null when not joinable. */
+    getJoinButtonRect(rowY, listX, listWidth, entry) {
+        if (!entry || entry.status !== "found") return null;
+        return { x: listX + listWidth - 22, y: rowY + 7, w: 14, h: 22 };
+    }
+
+    joinRemoteWorld(entry) {
+        if (!entry || entry.status !== "found") return;
+        const mp = this.minecraft.multiplayer;
+        if (!mp) return;
+
+        // Hand the signalling slot over before dialling.
+        this.minecraft.remoteWorlds?.releaseProbe?.();
+
+        mp.join(entry.code, { enterOnApproval: true, approvalToken: entry.token })
+            .catch(error => {
+                console.error("Failed to join saved world:", error);
+                // A failed attempt does not mean the host is down, so the
+                // status is left alone and re-checked instead of demoted.
+                this.minecraft.systemDialogs?.show(
+                    `Could not join ${entry.hostUsername}: ${describeJoinError(error)}`,
+                    { duration: 6000 }
+                );
+                this.minecraft.remoteWorlds?.ping?.(entry);
+            });
     }
 
     handleMouseScroll(delta) {
@@ -161,6 +250,17 @@ export default class GuiSelectWorld extends GuiScreen {
 
     drawScreen(stack, mouseX, mouseY, partialTicks) {
         this.drawDefaultBackground(stack);
+
+        // Re-check stale entries while the list is open, so a host that comes
+        // up meanwhile turns joinable without reopening the screen. pingAll
+        // decides per entry; this is only a throttle on the sweep itself.
+        if (this.remoteEntries && this.remoteEntries.length > 0) {
+            const now = performance.now();
+            if (!this._lastPingSweep || now - this._lastPingSweep > 1000) {
+                this._lastPingSweep = now;
+                this.minecraft.remoteWorlds?.pingAll();
+            }
+        }
 
         // Header - move title down slightly to avoid cutting off
         this.drawCenteredString(stack, "Select World", this.width / 2, 18);
@@ -237,6 +337,30 @@ export default class GuiSelectWorld extends GuiScreen {
             this.drawStringNoShadow(stack, `${modeText}, ${version}`, textX, y + 24, 0x808080);
         }
 
+        // Remote worlds, listed below the local saves.
+        const remote = this.remoteEntries || [];
+        for (let r = 0; r < remote.length; r++) {
+            const i = this.savedWorlds.length + r;
+            const y = listTop + i * slotHeight - this.scrollY;
+            if (y + slotHeight < listTop || y > listBottom) continue;
+
+            const entry = remote[r];
+            const isSelected = i === this.selectedWorldIndex;
+            const isHovered = mouseY >= y && mouseY < y + slotHeight
+                && mouseX >= listX && mouseX <= listX + listWidth
+                && mouseY >= listTop && mouseY <= listBottom;
+
+            if (isSelected) {
+                this.drawRect(stack, listX - 1, y - 1, listX + listWidth + 1, y + slotHeight + 1, "#FFFFFF");
+                this.drawRect(stack, listX, y, listX + listWidth, y + slotHeight, "#000000");
+            } else if (isHovered) {
+                this.drawRect(stack, listX - 1, y - 1, listX + listWidth + 1, y + slotHeight + 1, "#808080");
+                this.drawRect(stack, listX, y, listX + listWidth, y + slotHeight, "#000000");
+            }
+
+            this.drawRemoteRow(stack, entry, listX, y, listWidth, mouseX, mouseY);
+        }
+
         stack.restore();
 
         // Draw dark overlays for top and bottom to hide partially scrolled items, ensuring title is clear
@@ -269,13 +393,103 @@ export default class GuiSelectWorld extends GuiScreen {
         super.drawScreen(stack, mouseX, mouseY, partialTicks);
     }
 
+    /**
+     * One remote row: grey thumbnail while unverified, colour once the host
+     * answers; sweeping bars while pinging, a red cross when unreachable, and
+     * the join arrow only once the world is known to be up.
+     */
+    drawRemoteRow(stack, entry, listX, y, listWidth, mouseX, mouseY) {
+        const status = entry.status || "idle";
+        const found = status === "found";
+
+        // Thumbnail
+        const thumb = found
+            ? this.getLanTexture("server_found.png")
+            : this.getLanTexture("Server_pinging.png");
+        if (thumb) {
+            this.drawSprite(stack, thumb, 0, 0, thumb.width, thumb.height, listX + 2, y + 2, 32, 32);
+        } else {
+            this.drawRect(stack, listX + 2, y + 2, listX + 34, y + 34, "#404040");
+        }
+        if (!found) {
+            // Knock the unverified thumbnail back so it reads as inactive.
+            this.drawRect(stack, listX + 2, y + 2, listX + 34, y + 34, "rgba(0,0,0,0.35)");
+        }
+
+        const textX = listX + 38;
+        this.drawStringNoShadow(stack, entry.worldName, textX, y + 4, 0xFFFFFF);
+        this.drawStringNoShadow(stack, `${entry.hostUsername} - ${entry.code}`, textX, y + 14, 0x808080);
+
+        let statusText;
+        let statusColor;
+        if (found) {
+            statusText = typeof entry.players === "number"
+                ? `Online, ${entry.players} player${entry.players === 1 ? "" : "s"}`
+                : "Online";
+            statusColor = 0x55FF55;
+        } else if (status === "pinging") {
+            statusText = "Pinging...";
+            statusColor = 0x808080;
+        } else {
+            statusText = "Can't connect";
+            statusColor = 0xFF5555;
+        }
+        this.drawStringNoShadow(stack, statusText, textX, y + 24, statusColor);
+
+        // Right-hand indicator
+        if (status === "pinging") {
+            const frame = this.minecraft.remoteWorlds?.getPingFrame(entry) || 1;
+            const tex = this.getLanTexture(`pinging_${frame}.png`);
+            if (tex) this.drawSprite(stack, tex, 0, 0, tex.width, tex.height, listX + listWidth - 18, y + 14, 10, 8);
+        } else if (found) {
+            const rect = this.getJoinButtonRect(y, listX, listWidth, entry);
+            const hovered = rect
+                && mouseX >= rect.x && mouseX < rect.x + rect.w
+                && mouseY >= rect.y && mouseY < rect.y + rect.h;
+            const tex = this.getLanTexture(hovered ? "join_highlighted.png" : "join.png");
+            // The arrow sits in the right of its 32x32 sheet; blit just that.
+            if (tex && rect) this.drawSprite(stack, tex, 16, 5, 14, 22, rect.x, rect.y, rect.w, rect.h);
+        } else {
+            const tex = this.getLanTexture("ping_unknown.png");
+            if (tex) this.drawSprite(stack, tex, 0, 0, tex.width, tex.height, listX + listWidth - 18, y + 14, 10, 8);
+        }
+    }
+
     mouseClicked(mouseX, mouseY, mouseButton) {
         const listTop = 48;
         const listBottom = this.height - 64;
         const slotHeight = 36;
         const listWidth = 260;
         const listX = this.width / 2 - listWidth / 2;
-        
+
+        // Remote rows first: the join arrow is a hit target inside the row, so
+        // it has to win over plain row selection.
+        const remote = this.remoteEntries || [];
+        if (mouseY >= listTop && mouseY <= listBottom && mouseX >= listX && mouseX <= listX + listWidth) {
+            for (let r = 0; r < remote.length; r++) {
+                const i = this.savedWorlds.length + r;
+                const y = listTop + i * slotHeight - this.scrollY;
+                if (y + slotHeight < listTop) continue;
+                if (y > listBottom) break;
+                if (mouseY < y || mouseY >= y + slotHeight) continue;
+
+                const entry = remote[r];
+                const rect = this.getJoinButtonRect(y, listX, listWidth, entry);
+                if (rect && mouseX >= rect.x && mouseX < rect.x + rect.w
+                    && mouseY >= rect.y && mouseY < rect.y + rect.h) {
+                    this.joinRemoteWorld(entry);
+                    return;
+                }
+
+                // A row click is also an explicit re-check. Do not trust a
+                // cached FOUND result when the player is trying to connect.
+                this.minecraft.remoteWorlds?.ping?.(entry);
+                this.selectedWorldIndex = i;
+                this.init();
+                return;
+            }
+        }
+
         if (mouseY >= listTop && mouseY <= listBottom && mouseX >= listX && mouseX <= listX + listWidth) {
             for (let i = 0; i < this.savedWorlds.length; i++) {
                 const y = listTop + i * slotHeight - this.scrollY;
@@ -415,7 +629,7 @@ class GuiEditWorld extends GuiScreen {
     }
 }
 
-class GuiCreateWorldChoice extends GuiScreen {
+export class GuiCreateWorldChoice extends GuiScreen {
     constructor(previousScreen) {
         super();
         this.previousScreen = previousScreen;
@@ -438,36 +652,25 @@ class GuiCreateWorldChoice extends GuiScreen {
     importWorld() {
         const input = document.createElement('input');
         input.type = 'file';
-        input.accept = '.json';
-        input.onchange = (e) => {
-            const file = e.target.files[0];
+        input.accept = '.zip,.json,application/zip,application/json';
+        input.onchange = async (e) => {
+            const file = e.target.files && e.target.files[0];
             if (!file) return;
-            const reader = new FileReader();
-            reader.onload = (event) => {
-                try {
-                    const data = JSON.parse(event.target.result);
-                    // Extract properties
-                    const seed = data.s || "0";
-                    const name = data.n || "Imported World";
-                    const worldId = data.id || 'w_imp_' + Date.now();
-                    
-                    const world = new World(this.minecraft, seed, worldId);
-                    world.name = name;
-                    world.savedData = data;
-                    
-                    import("../../world/storage/WorldStorage.js").then(module => {
-                        module.default.saveWorld(worldId, data).then(() => {
-                            this.minecraft.loadWorld(world);
-                        });
-                    });
-                } catch(err) {
-                    console.error("Failed to import world:", err);
-                    if (this.minecraft.addMessageToChat) {
-                        this.minecraft.addMessageToChat("§cFailed to import world file.");
-                    }
-                }
-            };
-            reader.readAsText(file);
+            try {
+                const data = await WorldArchive.importFile(file);
+                const seed = data.s || "0";
+                const name = data.n || "Imported World";
+                const worldId = 'w_imp_' + Date.now();
+                data.id = worldId;
+                const world = new World(this.minecraft, seed, worldId, data.gm || 0);
+                world.name = name;
+                world.savedData = data;
+                await import("../../world/storage/WorldStorage.js").then(module => module.default.saveWorld(worldId, data));
+                this.minecraft.loadWorld(world);
+            } catch(err) {
+                console.error("Failed to import world:", err);
+                this.minecraft.addMessageToChat?.("§cFailed to import world archive.");
+            }
         };
         input.click();
     }

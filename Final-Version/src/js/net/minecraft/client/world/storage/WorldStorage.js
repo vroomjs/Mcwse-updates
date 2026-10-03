@@ -1,10 +1,14 @@
 export default class WorldStorage {
     static DB_NAME = 'minecraft_websim_storage';
-    static DB_VERSION = 4;
+    static DB_VERSION = 5;
     static STORE_WORLDS = 'worlds';
     static STORE_STRUCTURES = 'structures';
     static STORE_PACKS = 'resource_packs';
     static STORE_MODS = 'mods';
+    // Chunk data is kept as separate records instead of being serialized into
+    // one large world JSON value. IndexedDB is the browser equivalent of a
+    // folder containing metadata plus one file per chunk.
+    static STORE_CHUNKS = 'world_chunks';
 
     static async getDB() {
         return new Promise((resolve, reject) => {
@@ -23,6 +27,9 @@ export default class WorldStorage {
                 if (!db.objectStoreNames.contains(this.STORE_MODS)) {
                     db.createObjectStore(this.STORE_MODS, { keyPath: 'name' });
                 }
+                if (!db.objectStoreNames.contains(this.STORE_CHUNKS)) {
+                    db.createObjectStore(this.STORE_CHUNKS, { keyPath: 'id' });
+                }
             };
             request.onsuccess = (e) => resolve(e.target.result);
             request.onerror = (e) => reject(e.target.error);
@@ -32,39 +39,74 @@ export default class WorldStorage {
     static async saveWorld(worldId, worldData) {
         const db = await this.getDB();
         return new Promise((resolve, reject) => {
-            const tx = db.transaction(this.STORE_WORLDS, 'readwrite');
-            const store = tx.objectStore(this.STORE_WORLDS);
-            const entry = {
-                id: worldId,
-                name: worldData.n,
-                lastPlayed: Date.now(),
-                data: worldData
+            const chunks = worldData.c || {};
+            // Metadata stays small; chunk payloads are stored independently so
+            // future saves can update records without rebuilding one huge JSON
+            // blob in IndexedDB.
+            const metadata = { ...worldData, c: {} };
+            const tx = db.transaction([this.STORE_WORLDS, this.STORE_CHUNKS], 'readwrite');
+            const worlds = tx.objectStore(this.STORE_WORLDS);
+            const chunkStore = tx.objectStore(this.STORE_CHUNKS);
+            worlds.put({ id: worldId, name: worldData.n, lastPlayed: Date.now(), data: metadata });
+
+            const prefix = `${worldId}:`;
+            chunkStore.getAllKeys().onsuccess = event => {
+                const oldKeys = event.target.result || [];
+                const nextKeys = new Set(Object.keys(chunks).map(key => prefix + key));
+                for (const key of oldKeys) {
+                    if (String(key).startsWith(prefix) && !nextKeys.has(key)) chunkStore.delete(key);
+                }
+                for (const [key, value] of Object.entries(chunks)) {
+                    chunkStore.put({ id: prefix + key, worldId, key, data: value });
+                }
             };
-            const request = store.put(entry);
-            request.onsuccess = () => resolve();
-            request.onerror = () => reject(request.error);
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error || new Error('World save transaction failed'));
         });
     }
 
     static async loadWorld(worldId) {
         const db = await this.getDB();
         return new Promise((resolve, reject) => {
-            const tx = db.transaction(this.STORE_WORLDS, 'readonly');
-            const store = tx.objectStore(this.STORE_WORLDS);
-            const request = store.get(worldId);
-            request.onsuccess = () => resolve(request.result ? request.result.data : null);
-            request.onerror = () => reject(request.error);
+            const tx = db.transaction([this.STORE_WORLDS, this.STORE_CHUNKS], 'readonly');
+            const worlds = tx.objectStore(this.STORE_WORLDS);
+            const chunks = tx.objectStore(this.STORE_CHUNKS);
+            let worldEntry = null;
+            let chunkEntries = [];
+            worlds.get(worldId).onsuccess = event => { worldEntry = event.target.result || null; };
+            chunks.getAll().onsuccess = event => {
+                const prefix = `${worldId}:`;
+                chunkEntries = (event.target.result || []).filter(row => String(row.id).startsWith(prefix));
+            };
+            tx.oncomplete = () => {
+                if (!worldEntry) return resolve(null);
+                const data = worldEntry.data || {};
+                // Legacy worlds still have their chunks embedded in c.
+                if (chunkEntries.length) {
+                    data.c = Object.fromEntries(chunkEntries.map(row => [row.key, row.data]));
+                } else if (!data.c) {
+                    data.c = {};
+                }
+                resolve(data);
+            };
+            tx.onerror = () => reject(tx.error);
         });
     }
 
     static async deleteWorld(worldId) {
         const db = await this.getDB();
         return new Promise((resolve, reject) => {
-            const tx = db.transaction(this.STORE_WORLDS, 'readwrite');
-            const store = tx.objectStore(this.STORE_WORLDS);
-            const request = store.delete(worldId);
-            request.onsuccess = () => resolve();
-            request.onerror = () => reject(request.error);
+            const tx = db.transaction([this.STORE_WORLDS, this.STORE_CHUNKS], 'readwrite');
+            tx.objectStore(this.STORE_WORLDS).delete(worldId);
+            const chunks = tx.objectStore(this.STORE_CHUNKS);
+            chunks.getAllKeys().onsuccess = event => {
+                const prefix = `${worldId}:`;
+                for (const key of event.target.result || []) {
+                    if (String(key).startsWith(prefix)) chunks.delete(key);
+                }
+            };
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
         });
     }
 
@@ -80,6 +122,9 @@ export default class WorldStorage {
                     name: w.name,
                     lastPlayed: w.lastPlayed,
                     gm: w.data.gm,
+                    // POV captured at the last save; may be absent on worlds
+                    // saved before thumbnails existed.
+                    thumb: w.data.thumb || null,
                     size: JSON.stringify(w.data).length
                 }));
                 list.sort((a, b) => b.lastPlayed - a.lastPlayed);

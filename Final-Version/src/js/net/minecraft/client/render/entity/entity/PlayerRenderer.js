@@ -68,6 +68,34 @@ export default class PlayerRenderer extends EntityRenderer {
         this.group.visible=true;
     }
 
+    /**
+     * Hangs the held and offhand items off the arm bones.
+     *
+     * Must run after super.rebuild(): ModelRenderer.rebuild() clears its bone,
+     * so anything attached earlier is thrown away.
+     */
+    rebuildHeldItems(entity, mainId, offhandId) {
+        if (!this.model || !this.model.rightArm) return;
+        const brightness = Math.max(0.3, entity.getEntityBrightness ? entity.getEntityBrightness() : 1.0);
+
+        const attach = (bone, id, isOffhand) => {
+            if (!bone || !id) return;
+            const block = Block.getById(id);
+            if (!block) return;
+            const holder = new THREE.Object3D();
+            holder.name = isOffhand ? "heldItemOffhand" : "heldItem";
+            try {
+                this.worldRenderer.blockRenderer.renderItemHand(holder, block, brightness, isOffhand);
+            } catch (e) {
+                return; // a bad id must never take the whole player model down
+            }
+            if (holder.children.length) bone.add(holder);
+        };
+
+        attach(this.model.rightArm.bone, mainId, false);
+        attach(this.model.leftArm && this.model.leftArm.bone, offhandId, true);
+    }
+
     rebuild(entity) {
         // Determine skin to use
         let skinKey = (entity === this.worldRenderer.minecraft.player) ? 
@@ -108,6 +136,7 @@ export default class PlayerRenderer extends EntityRenderer {
 
         // Check if inventory exists safely
         let inventoryItem = (entity.inventory && typeof entity.inventory.getItemInSelectedSlot === 'function') ? entity.inventory.getItemInSelectedSlot() : 0;
+        const offhandOf = e => (e.inventory && e.inventory.offhand && e.inventory.offhand.id) || 0;
         
         // Use local itemToRender only for local player in first person
         let itemId = firstPerson ? this.worldRenderer.itemToRender : inventoryItem;
@@ -132,7 +161,7 @@ export default class PlayerRenderer extends EntityRenderer {
                     this.worldRenderer.blockRenderer.renderBlockInFirstPerson(itemGroup, block, 1.0);
                     if (itemGroup.children.length > 0) {
                         let mesh = itemGroup.children[0];
-                        if (block.getRenderType() === BlockRenderType.ITEM) {
+                        if (block.getRenderType() === BlockRenderType.ITEM && mesh.material) {
                             mesh.material.side = THREE.DoubleSide;
                         }
                     }
@@ -149,7 +178,7 @@ export default class PlayerRenderer extends EntityRenderer {
                     this.worldRenderer.blockRenderer.renderBlockInFirstPerson(offhandGroup, block, 1.0);
                     if (offhandGroup.children.length > 0) {
                         let mesh = offhandGroup.children[0];
-                        if (block.getRenderType() === BlockRenderType.ITEM) {
+                        if (block.getRenderType() === BlockRenderType.ITEM && mesh.material) {
                             mesh.material.side = THREE.DoubleSide;
                         }
                     }
@@ -157,6 +186,12 @@ export default class PlayerRenderer extends EntityRenderer {
             }
         } else {
             super.rebuild(entity);
+
+            // Third person (and every remote player). BlockRenderer already
+            // had renderItemHand() written in bone-space for exactly this,
+            // but nothing ever called it, which is why held items were
+            // invisible on anyone you could actually see.
+            this.rebuildHeldItems(entity, inventoryItem, offhandOf(entity));
         }
 
         // Render Armor (Must be after super.rebuild which clears the group)
@@ -411,6 +446,14 @@ export default class PlayerRenderer extends EntityRenderer {
             delete this.group.buildMeta;
         }
         this.prepareModel(player);
+        const pistolEquipped = player.inventory.getItemInSelectedSlot() === 568;
+        if (pistolEquipped && !player.minecraft.pistolWasEquipped) player.minecraft.weaponAnimation = "draw";
+        if (!pistolEquipped && player.minecraft.pistolWasEquipped) player.minecraft.weaponAnimation = "holster";
+        player.minecraft.pistolWasEquipped = pistolEquipped;
+        // updateFirstPerson runs every frame for both held-item and empty-hand
+        // paths. Advance the pistol Scene clip here rather than only in
+        // renderRightHand, which is skipped while an item is held.
+        this.worldRenderer.blockRenderer.updatePistolAnimation(player.inventory.getItemInSelectedSlot() === 568);
 
         // Make the groups visible
         this.firstPersonGroup.visible = true;
@@ -420,7 +463,6 @@ export default class PlayerRenderer extends EntityRenderer {
     renderRightHand(player, partialTicks) {
         if (player.isCameraman) { this.firstPersonGroup.visible=false; this.firstPersonOffhandGroup.visible=false; return; }
         this.updateFirstPerson(player);
-
         // Bind skin texture
         let skinKey = (player === this.worldRenderer.minecraft.player) ? this.worldRenderer.minecraft.settings.skin : player.skin;
         let skinTexture = this.worldRenderer.minecraft.getThreeTexture(skinKey);

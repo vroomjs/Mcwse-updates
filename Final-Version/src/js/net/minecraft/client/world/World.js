@@ -10,6 +10,7 @@ import EnumBlockFace from "../../util/EnumBlockFace.js";
 import Vector3 from "../../util/Vector3.js";
 import Vector4 from "../../util/Vector4.js";
 import LightEngine from "./LightEngine.js";
+import { captureThumbnail } from "./WorldThumbnail.js";
 import * as THREE from "three";
 import Random from "../../util/Random.js";
 import Primer from "./generator/Primer.js";
@@ -195,7 +196,9 @@ export default class World {
             keepInventory: false,
             cheatsEnabled: false,
             showDayCounter: false,
-            generateStructures: true
+            generateStructures: true,
+            // Player versus player combat. Only has any effect in multiplayer.
+            pvp: true
         };
 
         this.pathFinder = new PathFinder(this);
@@ -2116,6 +2119,10 @@ export default class World {
                         te: Object.fromEntries(this.tileEntities), // Persist command block/chest data
                         cam: this.minecraft.cameraManager ? this.minecraft.cameraManager.serialize() : this.broadcastCameras,
                         gr: this.gameRules,
+                        // Player's POV at the moment of saving, used as the
+                        // world's thumbnail. Falls back to the previous one
+                        // so a save made from a menu does not wipe it.
+                        thumb: this.captureThumb() || (this.savedData && this.savedData.thumb) || null,
                         pl: playerData,
                         pd: this.playerData, // Save remote player data
                         lp: Date.now(),
@@ -2152,6 +2159,18 @@ export default class World {
                 resolve({ success: false, error: e });
             }
         });
+    }
+
+    /** Grabs the current view as a thumbnail; null when not in-world. */
+    captureThumb() {
+        try {
+            const mc = this.minecraft;
+            // Only meaningful while this world is the one on screen.
+            if (!mc || mc.world !== this) return null;
+            return captureThumbnail(mc);
+        } catch (e) {
+            return null;
+        }
     }
 
     regenerateOneBlock() {

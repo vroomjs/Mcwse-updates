@@ -47,13 +47,15 @@ export default class CameraManager {
     }
 
     createCamera(data={}, sync=true) {
+        const mp=this.minecraft.multiplayer, cp=mp?.cameraPermissions?.();
+        if(sync && mp?.connected && !mp.isHosting && !cp?.create) return null;
         const camera=data instanceof StaticCamera?data:new StaticCamera(data);
         this.staticCameras.set(camera.id,camera); this.attach(); this.ensureModel(camera);
         if(sync) this.minecraft.multiplayer?.sendCameraMessage?.("camera_create",camera.toJSON());
         return camera;
     }
-    updateCamera(id,data={},sync=true) { const c=this.staticCameras.get(id); if(!c)return null; c.update(data); this.updateModel(c); if(this.session.sourceId===id)this.minecraft.broadcastMedia?.updateSource(id); if(sync)this.minecraft.multiplayer?.sendCameraMessage?.("camera_update",c.toJSON()); return c; }
-    removeCamera(id,sync=true) { const c=this.staticCameras.get(id); if(!c)return false; if(this.returnCameraId===id)this.returnCameraId=null; this.staticCameras.delete(id); const m=this.models.get(id); if(m){this.group.remove(m);this.disposeModel(m);this.models.delete(id);} if(sync)this.minecraft.multiplayer?.sendCameraMessage?.("camera_remove",{id}); if(this.session.sourceId===id)this.selectSource("player:local"); return true; }
+    updateCamera(id,data={},sync=true) { const mp=this.minecraft.multiplayer,cp=mp?.cameraPermissions?.(); if(sync&&mp?.connected&&!mp.isHosting&&!cp?.edit)return null; const c=this.staticCameras.get(id); if(!c)return null; c.update(data); this.updateModel(c); if(this.session.sourceId===id)this.minecraft.broadcastMedia?.updateSource(id); if(sync)this.minecraft.multiplayer?.sendCameraMessage?.("camera_update",c.toJSON()); return c; }
+    removeCamera(id,sync=true) { const mp=this.minecraft.multiplayer,cp=mp?.cameraPermissions?.(); if(sync&&mp?.connected&&!mp.isHosting&&!cp?.edit)return false; const c=this.staticCameras.get(id); if(!c)return false; if(this.returnCameraId===id)this.returnCameraId=null; this.staticCameras.delete(id); const m=this.models.get(id); if(m){this.group.remove(m);this.disposeModel(m);this.models.delete(id);} if(sync)this.minecraft.multiplayer?.sendCameraMessage?.("camera_remove",{id}); if(this.session.sourceId===id)this.selectSource("player:local"); return true; }
     load(list=[]) { this.clear(); for(const data of list||[])this.createCamera(data,false); }
     serialize() { return [...this.staticCameras.values()].map(c=>c.toJSON()); }
     ensureModel(c) { let m=this.models.get(c.id); if(!m){m=this.makeModel(false);this.addPreviewMonitor(m,c);this.models.set(c.id,m);this.group.add(m);} this.updateModel(c); return m; }
@@ -88,12 +90,20 @@ export default class CameraManager {
     placeStaticCamera(){this.startPlacement();}
     getLookedAtCamera(maxDistance=5){const p=this.minecraft.player;if(!p)return null;const eye=new THREE.Vector3(p.x,p.y+p.getEyeHeight(),p.z),dir=p.getVectorForRotation(p.rotationPitch,p.rotationYaw);let best=null,bestT=maxDistance;for(const c of this.staticCameras.values()){if(!c.online||c.dimension!==(this.minecraft.world?.dimension||0))continue;const d=new THREE.Vector3(c.position.x-eye.x,c.position.y-eye.y,c.position.z-eye.z),t=d.x*dir.x+d.y*dir.y+d.z*dir.z;if(t<0||t>bestT)continue;const perp=d.clone().sub(new THREE.Vector3(dir.x,dir.y,dir.z).multiplyScalar(t)).length();if(perp<.65){best=c;bestT=t;}}return best;}
     getPlayerSource(player=this.minecraft.player) { return new CameraSource({id:player===this.minecraft.player?"player:local":`player:${player.id}`,name:player.username||"Player POV",type:player.isCameraman?"cameraman":"player",position:{x:player.x,y:player.y+player.getEyeHeight(),z:player.z},yaw:player.rotationYaw,pitch:player.rotationPitch,roll:player.cameraRoll||0,fov:player.cameraFov||this.minecraft.settings.fov,online:true,dimension:this.minecraft.world?.dimension||0}); }
-    getSource(id=this.session.sourceId) { if(id==="player:local")return this.minecraft.player?this.getPlayerSource():null; if(this.staticCameras.has(id))return this.staticCameras.get(id); for(const p of this.minecraft.multiplayer?.remotePlayers?.values?.()||[])if(`player:${p.id}`===id)return this.getPlayerSource(p); return null; }
+    getSource(id=this.session.sourceId) {
+        if(id==="player:local")return this.minecraft.player?this.getPlayerSource():null;
+        const localPeerId=this.minecraft.multiplayer?.peer?.id;
+        if(localPeerId&&id===`player:${localPeerId}`)return this.minecraft.player?this.getPlayerSource():null;
+        if(this.staticCameras.has(id))return this.staticCameras.get(id);
+        for(const p of this.minecraft.multiplayer?.remotePlayers?.values?.()||[])if(`player:${p.id}`===id)return this.getPlayerSource(p);
+        return null;
+    }
     listSources() { const a=[]; if(this.minecraft.player)a.push(this.getPlayerSource()); for(const p of this.minecraft.multiplayer?.remotePlayers?.values?.()||[])a.push(this.getPlayerSource(p)); return a.concat([...this.staticCameras.values()]); }
-    selectSource(id,automatic=false) { if(this.minecraft.multiplayer?.connected&&!this.minecraft.multiplayer.isHosting){this.minecraft.addMessageToChat("§cOnly the world host can select the broadcast source.");return false;} const source=this.getSource(id); if(!source)return false; if(!automatic)this.returnCameraId=null; this.activeRemoteWasCameraman=source.type==="cameraman"&&id.startsWith("player:")&&id!=="player:local"; this.session.select(id); this.minecraft.broadcastMedia?.updateSource(id); this.syncBroadcastState(); return true; }
+    selectSource(id,automatic=false) { const mp=this.minecraft.multiplayer,cp=mp?.cameraPermissions?.(); if(mp?.connected&&!mp.isHosting&&!automatic&&!cp?.cut){this.minecraft.addMessageToChat("§cYou do not have permission to cut the broadcast.");return false;} const source=this.getSource(id); if(!source)return false; if(!automatic)this.returnCameraId=null; this.activeRemoteWasCameraman=source.type==="cameraman"&&id.startsWith("player:")&&id!=="player:local"; this.session.select(id); this.minecraft.broadcastMedia?.updateSource(id); this.syncBroadcastState(); return true; }
     cycleSource() { const list=this.listSources().filter(x=>x.online); if(!list.length)return; let i=list.findIndex(x=>x.id===this.session.sourceId); this.selectSource(list[(i+1)%list.length].id); this.minecraft.addMessageToChat(`§bBroadcast source: ${this.getSource()?.name}`); }
     setBroadcasting(active) {
-        if(this.minecraft.multiplayer?.connected&&!this.minecraft.multiplayer.isHosting){this.minecraft.addMessageToChat("§cOnly the world host can control broadcasting.");return false;}
+        const mp=this.minecraft.multiplayer,cp=mp?.cameraPermissions?.();
+        if(mp?.connected&&!mp.isHosting&&!cp?.stream){this.minecraft.addMessageToChat("§cYou do not have permission to start or stop streaming.");return false;}
         if (active) {
             const result=this.minecraft.broadcastMedia?.start(this.session.sourceId);
             if (!result?.success) { this.minecraft.addMessageToChat("§c"+(result?.error||"Unable to start broadcast.")); return false; }
@@ -105,7 +115,15 @@ export default class CameraManager {
         if(this.minecraft.player)this.minecraft.player.broadcasting=!!active&&this.session.sourceId==="player:local";
         this.syncBroadcastState(); this.minecraft.multiplayer?.updateMyPresence?.(); return true;
     }
-    syncBroadcastState() { this.minecraft.multiplayer?.sendCameraMessage?.("broadcast_state",this.session.toJSON()); }
+    syncBroadcastState() {
+        const mp=this.minecraft.multiplayer;
+        const state=this.session.toJSON();
+        // `player:local` is only meaningful inside one browser. On LAN,
+        // publish the host peer id so viewers can distinguish the host POV
+        // from their own POV and hide private camera feeds correctly.
+        if(mp?.isHosting && mp.peer?.id && state.sourceId==="player:local") state.sourceId=`player:${mp.peer.id}`;
+        mp?.sendCameraMessage?.("broadcast_state",state);
+    }
     getBroadcastCanvas(){return this.broadcastCanvas;}
     tick(){ this.attach(); if(this.placement)this.updatePlacement(); for(const c of this.staticCameras.values())this.updateModel(c); if(this.activeRemoteWasCameraman&&!this.getSource(this.session.sourceId)){this.activeRemoteWasCameraman=false;if(this.selectSource("player:local",true))this.minecraft.addMessageToChat("§eCameraman left the world; switched to streamer POV.");} }
 

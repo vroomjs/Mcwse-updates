@@ -85,6 +85,10 @@ export default class BlockRenderer {
             "../../spawner.png",
             "../../structure_block (6).png",
             "../../commandblock.png",
+            "../../command_block_front.png",
+            "../../command_block_back.png",
+            "../../command_block_side.png",
+            "../../command_block_conditional.png",
             "../../dispenser_front.png",
             "../../lever.png",
             "../../stonesheet.png",
@@ -210,6 +214,42 @@ export default class BlockRenderer {
         this.creeperHeadModel = null;
         this.endermanHeadModel = null;
         this.loader = new GLTFLoader();
+        this.pistolModel = null;
+        this.pistolMixer = null;
+        this.pistolActions = {};
+        this.pistolLastTime = performance.now();
+        this.pistolAnimation = null;
+        this.pistolLoading = false;
+        this.pistolSfx = {
+            removeMag: "/pistol_remove.mp3",
+            insertMag: "/pistol_insert.mp3",
+            fire: ["/pistol_fire1.mp3", "/pistol_fire2.mp3", "/pistol_fire3.mp3", "/pistol_fire4.mp3"],
+            slideBack: "/pistol_slideback.mp3",
+            slideForward: "/pistol_slideforward.mp3"
+        };
+        this.pistolSfxAudio = new Map();
+        this.pistolAudioLastTime = 0;
+        this.pistolAudioPlayed = new Set();
+        this.loader.load("/pistol.glb", (gltf) => {
+            this.pistolModel = gltf.scene;
+            this.pistolModel.traverse(child => {
+                if (child.isMesh && child.material) {
+                    const old = child.material;
+                    child.material = new THREE.MeshBasicMaterial({
+                        map: old.map || null, color: 0xffffff, side: THREE.DoubleSide,
+                        transparent: !!old.transparent, alphaTest: 0.05, skinning: true
+                    });
+                }
+            });
+            this.pistolMixer = new THREE.AnimationMixer(this.pistolModel);
+            // The asset has one clip named exactly "Scene". Select it explicitly
+            // instead of relying on animation array ordering.
+            const clip = gltf.animations && (gltf.animations.find(a => a.name === "Scene") || gltf.animations.find(a => a.name?.toLowerCase() === "scene") || gltf.animations[0]);
+            if (clip) {
+                this.pistolActions.scene = this.pistolMixer.clipAction(clip);
+                this.pistolActions.scene.clampWhenFinished = true;
+            }
+        }, undefined, (err) => console.warn("Pistol GLB failed to load", err));
         
         // Load Bed Model
         this.loader.load('./bed (2).gltf', (gltf) => {
@@ -3197,69 +3237,106 @@ export default class BlockRenderer {
         this.tessellator = originalTessellator;
     }
 
+    // The command block uses four separate animated textures rather than one
+    // sheet, so each face binds its own tessellator. Frames are stacked
+    // vertically and selected through the material's repeat/offset, which is
+    // the same mechanism fire, water and the portal already use.
+    static COMMAND_BLOCK_TEXTURES = {
+        front: "../../command_block_front.png",
+        back: "../../command_block_back.png",
+        side: "../../command_block_side.png",
+        conditional: "../../command_block_conditional.png"
+    };
+    static COMMAND_BLOCK_FRAMES = 4;
+
+    // Unit vector each facing value points at. 0=South, 1=West, 2=North, 3=East.
+    static COMMAND_BLOCK_FACING = [
+        { x: 0, z: 1 },
+        { x: -1, z: 0 },
+        { x: 0, z: -1 },
+        { x: 1, z: 0 }
+    ];
+
+    /**
+     * Which of the four textures a face uses. Top and bottom take the side
+     * texture, matching the vanilla model, and a conditional block swaps the
+     * side texture for the chevron variant.
+     */
+    commandBlockTextureFor(dir, conditional, face) {
+        const names = BlockRenderer.COMMAND_BLOCK_TEXTURES;
+        const facing = BlockRenderer.COMMAND_BLOCK_FACING[dir & 3];
+        if (face.y === 0) {
+            if (face.x === facing.x && face.z === facing.z) return names.front;
+            if (face.x === -facing.x && face.z === -facing.z) return names.back;
+        }
+        return conditional ? names.conditional : names.side;
+    }
+
+    getCommandBlockTessellator(textureName) {
+        let tess = this.getTessellator(textureName);
+        let tex = this.worldRenderer.minecraft.getThreeTexture(textureName);
+        if (!tex) return null;
+
+        // Command-block sheets are 16x(16 * frameCount). Always configure the
+        // existing texture as well as the first-time path: resource textures
+        // can be reused by the loader and may otherwise retain repeat=1,
+        // which exposes the complete animation sheet on every face.
+        tex.magFilter = THREE.NearestFilter;
+        tex.minFilter = THREE.NearestFilter;
+        tex.flipY = false;
+        tex.wrapS = THREE.ClampToEdgeWrapping;
+        tex.wrapT = THREE.RepeatWrapping;
+        tex.repeat.set(1, 1 / BlockRenderer.COMMAND_BLOCK_FRAMES);
+        tex.needsUpdate = true;
+        tess.bindTexture(tex);
+        return tess;
+    }
+
     renderCommandBlock(world, block, ambientOcclusion, x, y, z) {
         let originalTessellator = this.tessellator;
-        let tess = this.getTessellator(block.textureName);
-        if (!tess.material.map) {
-            let tex = this.worldRenderer.minecraft.getThreeTexture(block.textureName);
-            if (tex) {
-                tex.magFilter = THREE.NearestFilter;
-                tex.minFilter = THREE.NearestFilter;
-                tex.flipY = false;
-                tess.bindTexture(tex);
-            }
-        }
-        this.tessellator = tess;
+        const names = BlockRenderer.COMMAND_BLOCK_TEXTURES;
 
-        // Detect if texture is a multi-sprite sheet or single square
-        let spriteCount = 1;
-        if (tess.material.map && tess.material.map.image) {
-            const img = tess.material.map.image;
-            if (img.width > img.height) {
-                spriteCount = Math.round(img.width / img.height);
-            }
-        }
-
-        // If it's a single texture placeholder, use mineral rendering
-        if (spriteCount < 3) {
+        // Fall back to the old single-texture path if the set is unavailable,
+        // so a missing file degrades instead of rendering an invisible block.
+        const frontTess = this.getCommandBlockTessellator(names.front);
+        if (!frontTess) {
             this.renderMineralBlock(world, block, ambientOcclusion, x, y, z);
             this.tessellator = originalTessellator;
             return;
         }
 
         let boundingBox = block.getBoundingBox(world, x, y, z);
-        let meta = world ? world.getBlockDataAt(x, y, z) : 0; // Default to South for GUI visibility
-
-        // 3-sprite sheet logic: 0=Front, 1=Back, 2=Side
-        let spriteWidth = 1 / spriteCount;
+        let meta = world ? world.getBlockDataAt(x, y, z) : 0;
+        let dir = meta & 3;                       // 0=S, 1=W, 2=N, 3=E
+        let conditional = (meta & 8) !== 0;       // bit 3 marks conditional
 
         for (let face of EnumBlockFace.values()) {
-            if (world === null || block.shouldRenderFace(world, x, y, z, face)) {
-                let textureIndex = 2; // Side default
-                // 0=South, 1=West, 2=North, 3=East
-                let dir = meta & 3;
-                let isFront = (dir === 0 && face === EnumBlockFace.SOUTH) || (dir === 1 && face === EnumBlockFace.WEST) || (dir === 2 && face === EnumBlockFace.NORTH) || (dir === 3 && face === EnumBlockFace.EAST);
-                let isBack = (dir === 0 && face === EnumBlockFace.NORTH) || (dir === 1 && face === EnumBlockFace.EAST) || (dir === 2 && face === EnumBlockFace.SOUTH) || (dir === 3 && face === EnumBlockFace.WEST);
-                
-                if (isFront) textureIndex = 0;
-                else if (isBack || face === EnumBlockFace.TOP || face === EnumBlockFace.BOTTOM) textureIndex = 1;
+            if (world !== null && !block.shouldRenderFace(world, x, y, z, face)) continue;
 
-                let minU = textureIndex * spriteWidth, maxU = minU + spriteWidth;
-                let minV = 0.0, maxV = 1.0;
-                let tempV = minV; minV = 1.0 - maxV; maxV = 1.0 - tempV;
+            let textureName = this.commandBlockTextureFor(dir, conditional, face);
+            let tess = this.getCommandBlockTessellator(textureName);
+            if (!tess) continue;
+            this.tessellator = tess;
 
-                let color = block.getColor(world, x, y, z, face);
-                let red = (color >> 16 & 255) / 255.0, green = (color >> 8 & 255) / 255.0, blue = (color & 255) / 255.0;
+            let color = block.getColor(world, x, y, z, face);
+            let red = (color >> 16 & 255) / 255.0, green = (color >> 8 & 255) / 255.0, blue = (color & 255) / 255.0;
 
-                if (!ambientOcclusion && world) {
-                    let level = world.getTotalLightAt(x + face.x, y + face.y, z + face.z);
-                    let brightness = 0.9 / 15.0 * Math.max(1, level) + 0.1;
-                    this.tessellator.setColor(red * brightness, green * brightness, blue * brightness);
-                } else if (!world) this.tessellator.setColor(1, 1, 1);
-
-                this.addFace(world, face, ambientOcclusion, x + boundingBox.minX, y + boundingBox.minY, z + boundingBox.minZ, x + boundingBox.maxX, y + boundingBox.maxY, z + boundingBox.maxZ, minU, minV, maxU, maxV, red, green, blue);
+            if (!ambientOcclusion && world) {
+                let level = world.getTotalLightAt(x + face.x, y + face.y, z + face.z);
+                let brightness = 0.9 / 15.0 * Math.max(1, level) + 0.1;
+                this.tessellator.setColor(red * brightness, green * brightness, blue * brightness);
+            } else if (!world) {
+                this.tessellator.setColor(1, 1, 1);
             }
+
+            // Geometry spans the full 0..1 range; the material's repeat/offset
+            // narrows it to the current frame.
+            this.addFace(world, face, ambientOcclusion,
+                x + boundingBox.minX, y + boundingBox.minY, z + boundingBox.minZ,
+                x + boundingBox.maxX, y + boundingBox.maxY, z + boundingBox.maxZ,
+                0.0, 0.0, 1.0, 1.0, red, green, blue);
         }
+
         this.tessellator = originalTessellator;
     }
 
@@ -4720,8 +4797,150 @@ export default class BlockRenderer {
         }
     }
 
+    playPistolSfx(key) {
+        const url = this.pistolSfx[key];
+        if (!url) return;
+        let audio = this.pistolSfxAudio.get(key);
+        if (!audio) {
+            audio = new Audio(url);
+            audio.preload = "auto";
+            this.pistolSfxAudio.set(key, audio);
+        }
+        try { audio.pause(); audio.currentTime = 0; } catch (e) {}
+        audio.volume = 0.9;
+        audio.play().catch(() => {});
+    }
+
+    updatePistolAnimation(active = true) {
+        if (!active) {
+            const action = this.pistolActions.scene;
+            if (action) { action.stop(); action.reset(); }
+            this.pistolAnimation = null;
+            this.pistolLastTime = performance.now();
+            return;
+        }
+        if (!this.pistolMixer || !this.pistolActions.scene) return;
+        const now = performance.now();
+        // Dev Tools rebuilds the first-person container whenever a slider moves.
+        // Do not let those rebuilds advance the Scene clip while positioning.
+        const editingPistol = this.worldRenderer.minecraft.currentScreen?.constructor?.name === "GuiDevTools" && this.worldRenderer.minecraft.devTools.mode === "pistol";
+        if (editingPistol) {
+            this.pistolLastTime = now;
+            return;
+        }
+        const dt = Math.min(0.05, Math.max(0, now - this.pistolLastTime) / 1000);
+        this.pistolLastTime = now;
+        const ranges = {
+            // Q plays the complete source clip named "Scene".
+            scene: [0.00, 16.80],
+            idle: [1.43, 1.43],
+            draw: [0.00, 1.61], inspect: [1.64, 7.42], fire: [7.44, 8.26],
+            easy_reload: [8.29, 11.20], final_shot_and_full_reload: [11.26, 16.12], holster: [16.29, 16.80]
+        };
+        const requested = this.worldRenderer.minecraft.weaponAnimation;
+        if (requested) {
+            const r = ranges[requested] || ranges.inspect;
+            const action = this.pistolActions.scene;
+            action.stop();
+            action.reset();
+            action.enabled = true;
+            action.paused = false;
+            action.setEffectiveWeight(1);
+            action.setEffectiveTimeScale(1);
+            action.setLoop(THREE.LoopOnce, 1);
+            action.clampWhenFinished = true;
+            action.time = r[0];
+            action.play();
+            this.pistolAudioLastTime = r[0] - 0.001;
+            this.pistolAudioPlayed.clear();
+            this.pistolAnimation = requested;
+            this.worldRenderer.minecraft.weaponAnimation = null;
+        }
+        this.pistolMixer.update(dt);
+        const currentTime = this.pistolActions.scene.time;
+        const previousTime = this.pistolAudioLastTime;
+        const trigger = (id, t, key) => {
+            if (previousTime < t && currentTime >= t && !this.pistolAudioPlayed.has(id)) {
+                this.pistolAudioPlayed.add(id);
+                this.playPistolSfx(key);
+            }
+        };
+        if (this.pistolAnimation === "draw") trigger("draw-slide", 0.28, "slideForward");
+        if (this.pistolAnimation === "easy_reload") {
+            trigger("remove", 8.68, "removeMag");
+            trigger("insert", 9.29, "insertMag");
+        }
+        if (this.pistolAnimation === "final_shot_and_full_reload") {
+            trigger("remove-full", 12.31, "removeMag");
+            trigger("insert-full", 13.55, "insertMag");
+            trigger("back", 14.55, "slideBack");
+            trigger("forward", 14.78, "slideForward");
+        }
+        if (this.pistolAnimation === "fire") {
+            const fireKey = "fire" + (this.worldRenderer.minecraft.pistolAmmo % 4);
+            if (previousTime < 7.44 && currentTime >= 7.44 && !this.pistolAudioPlayed.has("fire")) {
+                this.pistolAudioPlayed.add("fire");
+                const fireIndex = this.worldRenderer.minecraft.pistolAmmo % 4;
+                const url = this.pistolSfx.fire[fireIndex];
+                let audio = new Audio(url); audio.volume = 0.95; audio.play().catch(() => {});
+            }
+        }
+        this.pistolAudioLastTime = currentTime;
+        const mc = this.worldRenderer.minecraft;
+        const activeAction = this.pistolActions.scene;
+        const activeRange = ranges[this.pistolAnimation];
+        if (activeRange && activeAction.time >= activeRange[1]) {
+            if (this.pistolAnimation === "idle") {
+                // Hold the exact 01:43 idle pose instead of stopping and
+                // falling back to the model's bind/static pose.
+                activeAction.time = 1.43;
+                activeAction.paused = true;
+                return;
+            }
+            const finished = this.pistolAnimation;
+            activeAction.stop();
+            activeAction.time = activeRange[1];
+            if (finished === "easy_reload") {
+                mc.pistolAmmo = 6;
+                mc.pistolReloadPending = false;
+                mc.soundManager?.playSound("crossbow.loading_end", mc.player.x, mc.player.y, mc.player.z, 1.0, 1.0);
+            }
+            if (finished === "final_shot_and_full_reload" && mc.pistolReloadPending) {
+                mc.pistolAmmo = 6;
+                mc.pistolReloadPending = false;
+                mc.soundManager?.playSound("crossbow.loading_end", mc.player.x, mc.player.y, mc.player.z, 1.0, 0.85);
+            }
+            // Once any non-holster action ends, settle into the held idle pose.
+            if (finished !== "holster") mc.weaponAnimation = "idle";
+            this.pistolAnimation = null;
+        }
+    }
+
+    renderPistolInFirstPerson(group) {
+        if (!this.pistolModel) return;
+        // PlayerRenderer rebuilds the item container when Dev Tools values change.
+        // Reparent the cached GLB into the fresh container or it disappears.
+        if (this.pistolModel.parent !== group) group.add(this.pistolModel);
+        // The GLB already contains the blocky FPS arms shown in the reference image.
+        // The GLB already contains the blocky FPS arms shown in the reference.
+        // Hide the game's ordinary hand mesh and use the imported rig as one unit.
+        const vanillaHand = this.worldRenderer.minecraft.player?.renderer?.handModel;
+        if (vanillaHand) vanillaHand.visible = false;
+        // Read the live PISTOL transform from the Dev Tools menu.
+        const dev = this.worldRenderer.minecraft.devTools.pistol || { x: -29.35, y: 5.63, z: 0.65, rotationX: 0.06, rotationY: 2.35, rotationZ: 0.02, scale: 19.97 };
+        this.pistolModel.position.set(dev.x, dev.y, dev.z);
+        this.pistolModel.rotation.set(dev.rotationX, dev.rotationY, dev.rotationZ);
+        this.pistolModel.scale.set(dev.scale, dev.scale, dev.scale);
+        this.pistolModel.visible = true;
+        this.updatePistolAnimation();
+    }
+
     renderBlockInFirstPerson(group, block, brightness) {
         const player = this.worldRenderer.minecraft.player;
+        if (block.getId() === 568) {
+            this.renderPistolInFirstPerson(group);
+            return;
+        }
         const inv = player.inventory;
         const stack = inv.getStackInSlot(inv.selectedSlotIndex);
         const tag = stack ? stack.tag : null;

@@ -1481,7 +1481,14 @@ export default class PlayerEntity extends EntityLiving {
                 
                 // Thorns logic
                 if (fromEntity && en.thorns && Math.random() < (en.thorns * 0.15)) {
-                    if (fromEntity.takeHit) fromEntity.takeHit(this, 1 + Math.floor(Math.random() * 4));
+                    const thornsDamage = 1 + Math.floor(Math.random() * 4);
+                    if (fromEntity.constructor.name === "RemotePlayerEntity") {
+                        // Hitting the render proxy would do nothing; the real
+                        // attacker has to be told.
+                        this.minecraft.multiplayer?.sendPlayerDamage(fromEntity, thornsDamage, this);
+                    } else if (fromEntity.takeHit) {
+                        fromEntity.takeHit(this, thornsDamage);
+                    }
                 }
             }
         }
@@ -1515,7 +1522,9 @@ export default class PlayerEntity extends EntityLiving {
             let name = this.username || "Player";
             if (fromEntity) {
                 let attackerName = fromEntity.constructor.name.replace("Entity", "").toLowerCase();
-                if (attackerName === "creeper") msg = `${name} was blown up by a creeper`;
+                // Another player is named, not called "remoteplayer".
+                if (fromEntity.constructor.name === "RemotePlayerEntity") msg = `${name} was slain by ${fromEntity.username || "another player"}`;
+                else if (attackerName === "creeper") msg = `${name} was blown up by a creeper`;
                 else if (attackerName === "zombie") msg = `${name} was slain by a zombie`;
                 else if (attackerName === "skeleton") msg = `${name} was shot by a skeleton`;
                 else if (attackerName === "spider") msg = `${name} was bit by a spider`;
@@ -1548,6 +1557,14 @@ export default class PlayerEntity extends EntityLiving {
             });
             
             this.minecraft.addMessageToChat("§c" + msg);
+
+            // Everyone sharing the world should see the death, not just the
+            // victim. Covers every cause, so PVP kills, falls and lava all
+            // announce themselves.
+            const multiplayer = this.minecraft.multiplayer;
+            if (multiplayer && multiplayer.connected) {
+                multiplayer.broadcast({ type: "chat", message: "§c" + msg });
+            }
         }
     }
 

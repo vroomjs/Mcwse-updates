@@ -628,6 +628,10 @@ export class BlockRegistry {
         BlockRegistry.FISHING_ROD = new BlockFishingRod(346, "../../tools (1).png", 41); BlockRegistry.FISHING_ROD.name = "Fishing Rod";
         BlockRegistry.DEBUG_STICK = new BlockDebugStick(449); BlockRegistry.DEBUG_STICK.name = "Debug Stick";
         BlockRegistry.CROSSBOW = new BlockItem(499, "../../crossbow.png", 0).setMaxStackSize(1).setMaxDamage(326); BlockRegistry.CROSSBOW.name = "Crossbow";
+
+        // Custom first-person pistol imported from pistol.glb. The model is rendered by BlockRenderer.
+        BlockRegistry.PISTOL = new BlockItem(568, "../../pistol_icon.png", 0).setMaxStackSize(1).setMaxDamage(512);
+        BlockRegistry.PISTOL.name = "Pistol";
         BlockRegistry.MAP = new BlockMap(358); BlockRegistry.MAP.name = "Map";
         BlockRegistry.BOWL = new BlockItem(281, "../../food2.png", 1); BlockRegistry.BOWL.name = "Bowl";
         BlockRegistry.MUSHROOM_STEW = new BlockItem(282, "../../food2.png", 2).setMaxStackSize(1); BlockRegistry.MUSHROOM_STEW.name = "Mushroom Stew";

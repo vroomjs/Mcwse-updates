@@ -53,6 +53,12 @@ export default class IngameOverlay extends Gui {
         // Render hotbar
         this.renderHotbar(stack, width / 2 - 91, height - 22, partialTicks, player);
 
+        // Pistol ammunition counter, positioned in the lower-right HUD.
+        if (isMainPlayer && player.inventory.getItemInSelectedSlot() === 568) {
+            const ammo = this.minecraft.pistolAmmo ?? 6;
+            this.drawRightString(stack, "AMMO " + ammo + " / 6", width - 12, height - 22, 0xFFFFFF);
+        }
+
         // Render held item name above hotbar (Only for local active focus or main player)
         if (this.itemNameDisplayTime > 0 && isMainPlayer) {
             stack.save();

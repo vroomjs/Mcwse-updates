@@ -439,6 +439,9 @@ export default class GuiChest extends GuiScreen {
                 if (this.heldItem.count <= 0) this.heldItem = {id: 0, count: 0, damage: 0, tag: {}};
             }
         }
+
+        // Push the change out immediately rather than hoarding it until close.
+        this.saveAndSync();
     }
 
     onClose() {
@@ -456,7 +459,18 @@ export default class GuiChest extends GuiScreen {
             this.heldItem = {id: 0, count: 0};
         }
 
-        // Persist chest contents to tile entities
+        this.saveAndSync();
+    }
+
+    /**
+     * Writes the chest back and tells everyone else.
+     *
+     * This used to happen only in onClose(), which meant contents were
+     * invisible to other players until you shut the lid, and whoever closed
+     * last silently overwrote the other person's changes. It now runs on
+     * every slot interaction.
+     */
+    saveAndSync() {
         // Determine primary/secondary based on coordinates again
         let te1 = this.world.getTileEntity(this.chestX, this.chestY, this.chestZ) || {items: []};
         let te2 = null;
@@ -486,6 +500,30 @@ export default class GuiChest extends GuiScreen {
             if (te2) {
                 this.minecraft.multiplayer.onTileEntityChanged(this.neighborChest.x, this.neighborChest.y, this.neighborChest.z, te2);
             }
+        }
+    }
+
+    /**
+     * A remote player changed this chest while we have it open. Without this
+     * the open screen kept showing stale contents and then overwrote the
+     * other player's change on the next interaction.
+     */
+    onTileEntityUpdated(x, y, z, data) {
+        const isThis = (x === this.chestX && y === this.chestY && z === this.chestZ);
+        const isNeighbor = !!this.neighborChest && x === this.neighborChest.x &&
+                           y === this.neighborChest.y && z === this.neighborChest.z;
+        if (!isThis && !isNeighbor) return;
+        if (!data || !Array.isArray(data.items)) return;
+
+        const blank = () => ({ id: 0, count: 0, damage: 0, tag: {} });
+        // Mirror the primary/secondary split that init() uses.
+        let primaryIsThis = true;
+        if (this.neighborChest) {
+            primaryIsThis = !((this.neighborChest.x < this.chestX) || (this.neighborChest.z < this.chestZ));
+        }
+        const base = (isThis === primaryIsThis) ? 0 : 27;
+        for (let i = 0; i < 27; i++) {
+            this.chestItems[base + i] = data.items[i] || blank();
         }
     }
 

@@ -1,5 +1,6 @@
 import GuiScreen from "../GuiScreen.js";
 import GuiButton from "../widgets/GuiButton.js";
+import GuiToggleSwitch from "../widgets/GuiToggleSwitch.js";
 import GuiOptions from "./GuiOptions.js";
 import * as THREE from "three";
 import {BackSide} from "three";
@@ -12,6 +13,8 @@ import GuiMultiplayer from "./GuiMultiplayer.js";
 import GuiAchievements from "./GuiAchievements.js";
 
 export default class GuiMainMenu extends GuiScreen {
+
+    static VERSION_TEXT = "Minecraft Websim Edition - 1.01";
 
     static SPLASHES = [
         "Minecraft WSE is free!",
@@ -87,10 +90,30 @@ export default class GuiMainMenu extends GuiScreen {
         // Lightweight broadcast viewer. Use a relative URL so static hosting
         // under a subdirectory still opens this project's watch page.
         const streamsBtnW = 80;
-        this.buttonList.push(new GuiButton("Streams", this.width - streamsBtnW - 5, this.height - 25, streamsBtnW, 20, () => {
+        const streamsX = this.width - streamsBtnW - 5;
+        this.buttonList.push(new GuiButton("Streams", streamsX, this.height - 25, streamsBtnW, 20, () => {
             const watchUrl = new URL("watch/", window.location.href).href;
             window.open(watchUrl, "_blank", "noopener,noreferrer");
         }));
+
+        // MCWSE Preview switch, sharing the Streams button's row.
+        const settings = this.minecraft.settings;
+        const previewLabel = "MCWSE Preview";
+        const previewW = GuiToggleSwitch.widthFor(this.minecraft, previewLabel);
+        // Sit on the Streams row when it fits, otherwise hop to the row above so
+        // the switch never lands on the bottom-left version string.
+        const versionRight = 2 + this.minecraft.fontRenderer.getStringWidth(GuiMainMenu.VERSION_TEXT) + 6;
+        let previewX = streamsX - 8 - previewW;
+        let previewY = this.height - 25 + Math.floor((20 - GuiToggleSwitch.SWITCH_H) / 2);
+        if (previewX < versionRight) {
+            previewX = this.width - 5 - previewW;
+            previewY = this.height - 25 - GuiToggleSwitch.SWITCH_H - 4;
+        }
+        this.buttonList.push(new GuiToggleSwitch(
+            previewLabel, previewX, previewY, previewW,
+            () => !!settings.mcwsePreview,
+            (next) => { settings.mcwsePreview = next; settings.save(); }
+        ));
 
         // Remove panorama renderer: use normal GUI background instead
         // this.initPanoramaRenderer();
@@ -116,7 +139,7 @@ export default class GuiMainMenu extends GuiScreen {
         super.drawScreen(stack, mouseX, mouseY, partialTicks);
 
         // Draw version info
-        this.drawString(stack, "Minecraft Websim Edition - 1.01", 2, this.height - 10, 0xFFFFFF);
+        this.drawString(stack, GuiMainMenu.VERSION_TEXT, 2, this.height - 10, 0xFFFFFF);
     }
 
     updateScreen() {

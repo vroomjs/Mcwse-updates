@@ -134,6 +134,47 @@ export default class GuiIngameMenu extends GuiScreen {
         }));
     }
 
+    /**
+     * Badge sits immediately right of the DEV button (x 5, w 25) and is
+     * centred against its 20px height.
+     */
+    getUnseenBadgeRect() {
+        return { x: 34, y: 10, size: 10 };
+    }
+
+    hasUnseenNotifications() {
+        const mp = this.minecraft.multiplayer;
+        return !!(mp && mp.isHosting && mp.hasMissedJoinRequests && mp.hasMissedJoinRequests());
+    }
+
+    mouseClicked(mouseX, mouseY, mouseButton) {
+        if (this.hasUnseenNotifications()) {
+            const r = this.getUnseenBadgeRect();
+            if (mouseX >= r.x && mouseX < r.x + r.size && mouseY >= r.y && mouseY < r.y + r.size) {
+                this.openUnseenNotifications();
+                return;
+            }
+        }
+        super.mouseClicked(mouseX, mouseY, mouseButton);
+    }
+
+    openUnseenNotifications() {
+        const missed = this.minecraft.multiplayer.clearMissedJoinRequests();
+        if (missed.length === 0) return;
+
+        const names = [...new Set(missed.map(m => m.username))];
+        let text;
+        if (names.length === 1) {
+            text = `${names[0]} tried to join your world.`;
+        } else if (names.length === 2) {
+            text = `${names[0]} and ${names[1]} tried to join your world.`;
+        } else {
+            text = `${names.length} players tried to join your world.`;
+        }
+
+        this.minecraft.systemDialogs?.show(text, { duration: 5000 });
+    }
+
     drawScreen(stack, mouseX, mouseY, partialTicks) {
         // Background
         this.drawRect(stack, 0, 0, this.width, this.height, 'black', 0.6);
@@ -142,6 +183,12 @@ export default class GuiIngameMenu extends GuiScreen {
         this.drawCenteredString(stack, "Game Menu", this.width / 2, 50);
 
         super.drawScreen(stack, mouseX, mouseY, partialTicks);
+
+        // Unseen join requests, drawn after the buttons so it sits on top.
+        if (this.hasUnseenNotifications()) {
+            const r = this.getUnseenBadgeRect();
+            this.drawUnseenBadge(stack, r.x, r.y);
+        }
     }
 
 }

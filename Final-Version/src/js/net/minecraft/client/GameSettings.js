@@ -64,6 +64,11 @@ export default class GameSettings {
 
         this.cheatsEnabled = false;
         this.showDayCounter = false;
+        this.mcwsePreview = true;
+        this.mcwsePreviewDefaultVersion = 1;
+        // Experimental UI: AFK sleep mode
+        this.afkSleepMode = true;
+        this.afkMinutes = 5;
 
         // 0: 1m, 1: 5m, 2: 10m, 3: 30m, 4: Off
         this.autosaveInterval = 1;
@@ -134,11 +139,20 @@ export default class GameSettings {
                 const data = JSON.parse(stored);
                 const hasCurrentSmoothLightingPreference =
                     data.smoothLightingPreferenceVersion === 1;
+                // The Experimental UI shipped switched off, so existing
+                // profiles have a stored false that would otherwise hide it
+                // forever. Turn it on once; after that the switch is theirs.
+                const hasExperimentalDefault =
+                    data.mcwsePreviewDefaultVersion === 1;
                 for (let prop in data) {
                     this[prop] = data[prop];
                 }
                 if (!hasCurrentSmoothLightingPreference) {
                     this.ambientOcclusion = false;
+                }
+                if (!hasExperimentalDefault) {
+                    this.mcwsePreview = true;
+                    this.mcwsePreviewDefaultVersion = 1;
                 }
             } catch (e) {
                 console.warn("Failed to parse local settings:", e);

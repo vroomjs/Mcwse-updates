@@ -112,6 +112,12 @@ export default class ScreenRenderer {
                 renderMenu(mc.currentScreen, 0, 0, width, height);
             }
 
+            // System dialogs draw above both the HUD and any open menu, since
+            // they report status for actions started from a menu screen.
+            if (mc.systemDialogs) {
+                mc.systemDialogs.render(this.stack2d, width, height);
+            }
+
             if ((mc.currentScreen || mc.currentScreen2) && mc.usingControllerCursor) {
                 this.drawControllerCursor(this.stackCounts, mouseX, mouseY);
             }

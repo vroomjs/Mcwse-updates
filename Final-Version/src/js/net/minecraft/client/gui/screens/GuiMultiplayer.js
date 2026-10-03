@@ -49,7 +49,21 @@ export default class GuiMultiplayer extends GuiScreen {
                 this.fieldCode.setEnabled(false);
                 this.fieldUsername.setEnabled(false);
 
-                this.minecraft.multiplayer.join(code).catch(error => {
+                this.minecraft.multiplayer.join(code).then(result => {
+                    // Approval no longer drops straight into the world: it
+                    // saves the host to the world list, so send the player
+                    // there to actually launch it.
+                    if (result && result.entered === false) {
+                        this.joining = false;
+                        this.btnJoin.string = "Join";
+                        this.btnJoin.setEnabled(true);
+                        this.fieldCode.setEnabled(true);
+                        this.fieldUsername.setEnabled(true);
+                        import("./GuiSelectWorld.js").then(module => {
+                            this.minecraft.displayScreen(new module.default(this.previousScreen));
+                        });
+                    }
+                }).catch(error => {
                     console.error("LAN join failed:", error);
                     this.joining = false;
                     this.btnJoin.string = "Join";

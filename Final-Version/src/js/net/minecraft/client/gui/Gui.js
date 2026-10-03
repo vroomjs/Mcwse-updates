@@ -197,6 +197,38 @@ export default class Gui {
         stack.fillRect(left, top, right - left, bottom - top);
     }
 
+    /**
+     * 10x10 "unseen notification" badge: a red tile with a yellow exclamation
+     * mark. Drawn procedurally from the reference pixels so it needs no texture
+     * and stays crisp at any GUI scale.
+     */
+    drawUnseenBadge(stack, x, y, scale = 1) {
+        const FILL = "#D22323";
+        const EDGE = "#740A0A";
+        const CORNER = "#6E0808";
+        const MARK = "#FFFF55";
+
+        const p = (a, b, c, d, color) => this.drawRect(
+            stack,
+            x + a * scale, y + b * scale,
+            x + c * scale, y + d * scale,
+            color
+        );
+
+        p(0, 0, 10, 10, EDGE);
+        p(1, 1, 9, 9, FILL);
+
+        // The four corner pixels are a shade darker than the rest of the edge.
+        p(0, 0, 1, 1, CORNER);
+        p(9, 0, 10, 1, CORNER);
+        p(0, 9, 1, 10, CORNER);
+        p(9, 9, 10, 10, CORNER);
+
+        // Exclamation mark: 2px stem over a 1px gap, then the dot.
+        p(4, 2, 6, 6, MARK);
+        p(4, 7, 6, 8, MARK);
+    }
+
     drawTexture(stack, texture, x, y, width, height, alpha = 1.0) {
         Gui.drawSprite(stack, texture, 0, 0, 256, 256, x, y, width, height, alpha);
     }

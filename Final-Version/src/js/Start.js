@@ -423,6 +423,10 @@ class Start {
             "../../worldthumbnail (6).png",
             "../../structure_block (2).png",
             "../../commandblock.png",
+            "../../command_block_front.png",
+            "../../command_block_back.png",
+            "../../command_block_side.png",
+            "../../command_block_conditional.png",
             "../../dispenser_front.png",
             "../../lever.png",
             "../../stonesheet.png",
@@ -444,6 +448,19 @@ class Start {
             "../../newblocksset1.png",
             "../../techstuff.png"
         ];
+
+        // LAN server-list sprites: animated ping bars, join button states and
+        // the two world-entry thumbnails.
+        lazy.push("../../pinging_1.png");
+        lazy.push("../../pinging_2.png");
+        lazy.push("../../pinging_3.png");
+        lazy.push("../../pinging_4.png");
+        lazy.push("../../pinging_5.png");
+        lazy.push("../../ping_unknown.png");
+        lazy.push("../../join.png");
+        lazy.push("../../join_highlighted.png");
+        lazy.push("../../Server_pinging.png");
+        lazy.push("../../server_found.png");
 
         // Ensure bucket textures are available (empty + water)
         lazy.push("../../bucket.png");

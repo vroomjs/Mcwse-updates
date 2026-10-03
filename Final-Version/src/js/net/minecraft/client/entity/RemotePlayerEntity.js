@@ -17,6 +17,21 @@ export default class RemotePlayerEntity extends EntityLiving {
         this.attributeScale = 0;
         this.isCameraman = false; this.cameraMode = "operator"; this.cameraRoll = 0; this.cameraFov = 70; this.broadcasting = false;
         
+        // Equipment mirrored from its owner. PlayerRenderer reads armour and
+        // the held item straight off entity.inventory, so a remote player
+        // with no inventory rendered bare-handed and unarmoured no matter
+        // what the other person was actually holding. This shim is the
+        // smallest surface that satisfies the renderer.
+        this.heldItemId = 0;
+        this.offhandItemId = 0;
+        this.armorIds = [0, 0, 0, 0];
+        const self = this;
+        this.inventory = {
+            getItemInSelectedSlot() { return self.heldItemId; },
+            getArmor(i) { return { id: self.armorIds[i] | 0 }; },
+            get offhand() { return { id: self.offhandItemId }; }
+        };
+
         // Breaking progress for animation sync
         this.currentBreakingPos = null;
         this.breakingProgress = 0;
@@ -125,10 +140,31 @@ export default class RemotePlayerEntity extends EntityLiving {
             }
         }
         
+        if (presence.eq) this.setEquipment(presence.eq);
+
         // If skin changes dynamically
         if (presence.skin && presence.skin !== this.skin) {
             this.skin = presence.skin;
         }
+    }
+
+    /**
+     * @returns true when anything actually changed, so the caller can force
+     *          the renderer to rebuild rather than rebuilding every frame.
+     */
+    setEquipment(eq) {
+        if (!eq) return false;
+        const held = eq.h | 0;
+        const off = eq.o | 0;
+        const armor = Array.isArray(eq.a) ? eq.a : [0, 0, 0, 0];
+        const changed =
+            held !== this.heldItemId ||
+            off !== this.offhandItemId ||
+            this.armorIds.some((v, i) => v !== (armor[i] | 0));
+        this.heldItemId = held;
+        this.offhandItemId = off;
+        this.armorIds = [armor[0] | 0, armor[1] | 0, armor[2] | 0, armor[3] | 0];
+        return changed;
     }
     
     getEyeHeight() {

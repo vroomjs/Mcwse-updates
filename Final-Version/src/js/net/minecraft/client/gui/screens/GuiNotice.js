@@ -16,51 +16,44 @@ export default class GuiNotice extends GuiScreen {
         }
 
         this.mode = "patchnotes";
-        this.notice = "Welcome! This update adds live broadcasting, production cameras, and long-session optimizations.";
-        this.title = "Minecraft Websim Edition 1.02 - MineWatch Update";
+        this.notice = "Welcome! Deploy 4 adds LAN co-producers, private camera feeds, world backups, and core gameplay fixes.";
+        this.title = "Minecraft Websim Edition 1.04 - Deploy 4";
         this.sections = [
             {
-                title: "Broadcasting",
+                title: "LAN & Production",
                 items: [
-                    "Added MineWatch live broadcasts.",
-                    "Added Watch by Code and Browse.",
-                    "Added viewer chat for streamers.",
-                    "Added OBS-style Camera Studio.",
-                    "Streams switch cameras without",
-                    "disconnecting viewers.",
-                    "Death and offline feeds now show",
-                    "animated no-signal screens."
+                    "Added co-producers for LAN worlds.",
+                    "Owners can grant camera permissions.",
+                    "Added camera feed visibility controls.",
+                    "Added experimental Manage LAN.",
+                    "Non-producers see hidden camera previews.",
+                    "Added disabled streaming controls for guests."
                 ]
             },
             {
-                title: "Cameras & Graphics",
+                title: "Worlds & Saving",
                 items: [
-                    "Added static and cameraman sources.",
-                    "Added in-world camera previews.",
-                    "Inactive previews are clearly marked.",
-                    "Cameras can switch back when rendered.",
-                    "Missing cameramen fall back to POV.",
-                    "Added /realism true or false.",
-                    "Added /lod true or false and an",
-                    "adjustable LOD distance in Options."
+                    "Create Backup now exports a ZIP archive.",
+                    "Backups use a Minecraft-like folder layout.",
+                    "ZIP and legacy JSON imports are supported.",
+                    "World chunks save as separate records.",
+                    "Guest player data is saved on disconnect.",
+                    "Rejoining restores player progress."
                 ]
             },
             {
-                title: "Performance & Fixes",
+                title: "Gameplay & Quality of Life",
                 items: [
-                    "Gameplay chunks now have priority",
-                    "over all broadcast camera renders.",
-                    "Camera passes no longer load or",
-                    "unload gameplay chunks.",
-                    "Fixed long-session lag after exploring",
-                    "many chunks by spatially indexing",
-                    "signs, chests, and tile entities.",
-                    "Improved camera preview refresh speed.",
-                    "Improved source fallback and recovery."
+                    "Added /cheats enable or disable.",
+                    "Cheat-enabled worlds pause achievements.",
+                    "LAN block drops sync immediately.",
+                    "Fixed command-block animation sheets.",
+                    "Added server refresh and re-ping controls.",
+                    "Improved co-producer camera permissions."
                 ]
             }
         ];
-        this.footer = "MineWatch is available at /watch/ after opening a world to LAN and starting a broadcast.";
+        this.footer = "Deploy 4: MineWatch is available at /watch/ after opening a world to LAN and starting a broadcast.";
     }
 
     init() {

@@ -87,7 +87,7 @@ export default class BlockPumpkin extends Block {
     }
 
     spawnIronGolem(world, x, y, z) {
-        import("../../entity/passive/EntityIronGolem.js").then(module => {
+        import("../../../entity/passive/EntityIronGolem.js").then(module => {
             const EntityIronGolem = module.default;
             const golem = new EntityIronGolem(world.minecraft, world);
             golem.setPosition(x + 0.5, y, z + 0.5);

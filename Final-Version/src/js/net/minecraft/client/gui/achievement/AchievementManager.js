@@ -47,6 +47,10 @@ export default class AchievementManager {
     }
 
     grant(id) {
+        // Achievements are disabled for worlds with cheats enabled. Check at
+        // grant time so this also covers commands that enable cheats after the
+        // world has already started.
+        if (this.minecraft.world?.gameRules?.cheatsEnabled) return;
         if (this.unlocked[id] || !this.achievements[id]) return;
         
         this.unlocked[id] = true;

@@ -925,6 +925,25 @@ export default class WorldRenderer {
                 let currentFrame = Math.floor(Date.now() / 50) % frameCount;
                 this.texturePortal.offset.y = (frameCount - 1 - currentFrame) * frameHeight;
             }
+
+            // Update Command Block Animation. All four faces share one frame
+            // index so the block reads as a single animation rather than four
+            // textures drifting out of step.
+            {
+                let frameCount = 4;
+                let frameHeight = 1.0 / frameCount;
+                let currentFrame = Math.floor(Date.now() / 100) % frameCount;
+                let offsetY = (frameCount - 1 - currentFrame) * frameHeight;
+                for (let name of [
+                    "../../command_block_front.png",
+                    "../../command_block_back.png",
+                    "../../command_block_side.png",
+                    "../../command_block_conditional.png"
+                ]) {
+                    let tess = this.blockRenderer.textureTessellators.get(name);
+                    if (tess && tess.material.map) tess.material.map.offset.y = offsetY;
+                }
+            }
         }
         
         Tessellator.wavingEnabledUniform.value = this.minecraft.settings.wavingFoliage ? 1.0 : 0.0;

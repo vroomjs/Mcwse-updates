@@ -29,7 +29,8 @@ export default class GuiDevTools extends GuiScreen {
             if (dev.mode === "item") dev.mode = "block";
             else if (dev.mode === "block") dev.mode = "eating";
             else if (dev.mode === "eating") dev.mode = "crossbow";
-            else if (dev.mode === "crossbow") dev.mode = "fishingHand";
+            else if (dev.mode === "crossbow") dev.mode = "pistol";
+            else if (dev.mode === "pistol") dev.mode = "fishingHand";
             else if (dev.mode === "fishingHand") dev.mode = "fishingRod";
             else if (dev.mode === "fishingRod") dev.mode = "glint";
             else if (dev.mode === "glint") dev.mode = "lighting";
@@ -100,7 +101,8 @@ export default class GuiDevTools extends GuiScreen {
     }
 
     saveToLocal() {
-        localStorage.setItem('mc_dev_tools', JSON.stringify(this.minecraft.devTools));
+        // Position values intentionally remain session-only.
+        // Do not write Dev Tools transforms to localStorage.
     }
 
     resetToDefaults() {
@@ -108,6 +110,7 @@ export default class GuiDevTools extends GuiScreen {
         const defaults = {
             item: { x: 2.33, y: 0.02, z: 4.49, rotationX: 0.75, rotationY: 4.06, rotationZ: 5.44, scale: 20.10 },
             block: { x: 0.20, y: -4.17, z: 1.92, rotationX: -0.03, rotationY: 0.86, rotationZ: 0.00, scale: 10.0 },
+            pistol: { x: -29.35, y: 5.63, z: 0.65, rotationX: 0.06, rotationY: 2.35, rotationZ: 0.02, scale: 19.97 },
             eating: { x: 0.00, y: -0.17, z: -0.48, rotationX: 0.06, rotationY: 3.14, rotationZ: 0.17, scale: 2.50 }
         };
         Object.assign(dev[dev.mode], defaults[dev.mode]);

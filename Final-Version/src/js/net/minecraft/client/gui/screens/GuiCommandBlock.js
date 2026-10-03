@@ -24,6 +24,18 @@ export default class GuiCommandBlock extends GuiScreen {
         this.fieldCommand.isFocused = true;
         this.buttonList.push(this.fieldCommand);
 
+        // Conditional toggle. Bit 3 of the block metadata selects the
+        // conditional texture; the low two bits stay as the facing direction.
+        const isConditional = () => (this.world.getBlockDataAt(this.pos.x, this.pos.y, this.pos.z) & 8) !== 0;
+        const conditionalButton = new GuiButton(
+            isConditional() ? "Conditional" : "Unconditional",
+            centerX - 150, 80, 150, 20, () => {
+                const meta = this.world.getBlockDataAt(this.pos.x, this.pos.y, this.pos.z);
+                this.world.setBlockDataAt(this.pos.x, this.pos.y, this.pos.z, meta ^ 8);
+                conditionalButton.string = isConditional() ? "Conditional" : "Unconditional";
+            });
+        this.buttonList.push(conditionalButton);
+
         // Done button
         this.buttonList.push(new GuiButton("Done", centerX - 154, this.height - 40, 150, 20, () => {
             this.te.command = this.fieldCommand.getText();

@@ -40,7 +40,7 @@ export default class GuiMultiplayerHostSettings extends GuiScreen {
             this.emptyMessage = null;
         }
 
-        y = Math.max(y + 10, this.height - 110);
+        y = Math.max(y + 10, this.height - 134);
         const halfW = 98;
 
         this.buttonList.push(new GuiButton("Regenerate Code", centerX - 100, y, halfW, 20, () => {
@@ -53,7 +53,21 @@ export default class GuiMultiplayerHostSettings extends GuiScreen {
             this.minecraft.displayScreen(this.previousScreen);
         }));
 
-        this.buttonList.push(new GuiButton("Copy World Link",centerX-100,y+24,200,20,async()=>{
+        const rules = this.minecraft.world ? this.minecraft.world.gameRules : null;
+        const pvpButton = new GuiButton("PVP: " + (rules && rules.pvp !== false ? "ON" : "OFF"),
+            centerX - 100, y + 24, 200, 20, () => {
+                if (!this.minecraft.world) return;
+                const next = this.minecraft.world.gameRules.pvp === false;
+                this.minecraft.world.gameRules.pvp = next;
+                pvpButton.string = "PVP: " + (next ? "ON" : "OFF");
+                // Clients enforce PVP locally, so they need to be told.
+                if (mp.connected && mp.isHosting) {
+                    mp.broadcast({ type: "gamerules", gr: { pvp: next } });
+                }
+            });
+        this.buttonList.push(pvpButton);
+
+        this.buttonList.push(new GuiButton("Copy World Link",centerX-100,y+48,200,20,async()=>{
             const url=new URL(location.origin+location.pathname);url.searchParams.set('join',mp.lanCode);
             try{await navigator.clipboard.writeText(url.href);this.linkStatus='World link copied.';}catch(_){this.linkStatus='Could not copy world link.';}
         }));

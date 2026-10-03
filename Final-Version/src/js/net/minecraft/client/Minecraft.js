@@ -34,6 +34,10 @@ import EntitySnowball from "./entity/EntitySnowball.js";
 import EntityEnderPearl from "./entity/EntityEnderPearl.js";
 import EntityFishHook from "./entity/EntityFishHook.js";
 import AchievementManager from "./gui/achievement/AchievementManager.js";
+import SystemDialogManager from "./gui/SystemDialogManager.js";
+import ExpRouter from "./gui/experimental/ExpRouter.js";
+import AfkTracker from "./gui/experimental/AfkTracker.js";
+import RemoteWorlds from "/RemoteWorlds.js";
 import ParticleManager from "../../../../../BlockParticles.js";
 import { NetherWorld } from "../../../../../Nether.js";
 import { EndWorld } from "../../../../../End.js";
@@ -99,6 +103,11 @@ export default class Minecraft {
         // Bow pull state
         this.bowPullDuration = 0;
         this.crossbowPullDuration = 0;
+        // First-person GLB weapon animation state
+        this.weaponAnimation = null;
+        this.pistolAmmo = 6;
+        this.pistolWasEquipped = false;
+        this.pistolReloadPending = false;
 
         // Title state
         this.titleState = {
@@ -127,6 +136,8 @@ export default class Minecraft {
             block: { x: 0.20, y: -4.17, z: 1.92, rotationX: -0.03, rotationY: 0.86, rotationZ: 0.00, scale: 10.0 },
             eating: { x: 0.00, y: -0.17, z: -0.48, rotationX: 0.06, rotationY: 3.14, rotationZ: 0.17, scale: 2.50 },
             crossbow: { x: -14.15, y: -2.11, z: -17.75, rotationX: 1.46, rotationY: 3.14, rotationZ: 0.11, scale: 26.61 },
+            // Imported pistol GLB rig transform; editable in Dev Tools -> PISTOL.
+            pistol: { x: -29.35, y: 5.63, z: 0.65, rotationX: 0.06, rotationY: 2.35, rotationZ: 0.02, scale: 19.97 },
             fishingHand: { x: 2.68, y: 4.04, z: 6.26, rotationX: 0.83, rotationY: 0.85, rotationZ: 0.99, scale: 20.0 },
             fishingRod: { x: 0.75, y: 0.02, z: -0.57 },
             glint: {
@@ -149,17 +160,8 @@ export default class Minecraft {
             }
         };
 
-        // Load saved dev tools if available
-        try {
-            const savedDev = localStorage.getItem('mc_dev_tools');
-            if (savedDev) {
-                const parsed = JSON.parse(savedDev);
-                // Merge into existing to handle schema changes gracefully
-                for (let mode in parsed) {
-                    if (this.devTools[mode]) Object.assign(this.devTools[mode], parsed[mode]);
-                }
-            }
-        } catch (e) {}
+        // Dev-tool transforms are session-only; do not restore them from localStorage.
+        try { localStorage.removeItem("mc_dev_tools"); } catch (e) {}
 
         // Apply saved skin if it exists in resources
         if (this.settings.skin && this.resources[this.settings.skin]) {
@@ -267,6 +269,14 @@ export default class Minecraft {
 
         // Initialize Achievement Manager
         this.achievementManager = new AchievementManager(this);
+
+        // Initialize System Dialogs (Bedrock-style status popups)
+        this.systemDialogs = new SystemDialogManager(this);
+        // Idle detection for the Experimental UI's sleep-mode screen.
+        this.afkTracker = new AfkTracker(this);
+
+        // Worlds this client has been approved to join, persisted locally
+        this.remoteWorlds = new RemoteWorlds(this);
 
         // Initialize Particle Manager
         this.particleManager = new ParticleManager(this);
@@ -602,6 +612,18 @@ export default class Minecraft {
         return this.world !== null && this.worldRenderer !== null && this.player !== null;
     }
 
+    /**
+     * PVP is multiplayer-only and respects the `pvp` game rule. Checked on
+     * both ends: the attacker will not send a hit and the victim will not
+     * apply one, so flipping the rule off cannot be bypassed by a stale
+     * client that keeps swinging.
+     */
+    isPvpEnabled() {
+        const mp = this.multiplayer;
+        if (!mp || !mp.connected) return false;
+        return this.world?.gameRules?.pvp !== false;
+    }
+
     requestNextFrame() {
         requestAnimationFrame(() => {
             if (this.running) {
@@ -756,6 +778,10 @@ export default class Minecraft {
             return;
         }
 
+        // Every screen change funnels through here, so this is the one place
+        // the Experimental UI needs to hook to shadow the classic screens.
+        screen = ExpRouter.route(this, screen);
+
         const currentField = playerIdx === 0 ? 'currentScreen' : 'currentScreen2';
 
         // Close previous screen
@@ -765,7 +791,7 @@ export default class Minecraft {
 
         // If trying to close all screens (null) but no world is loaded, default to Main Menu
         if (screen === null && this.world === null) {
-            screen = new GuiMainMenu();
+            screen = ExpRouter.route(this, new GuiMainMenu());
         }
 
         // Switch screen
@@ -2096,6 +2122,18 @@ export default class Minecraft {
             this.displayScreen(new GuiInventory(this.player));
         }
 
+        const heldForWeapon = this.player?.inventory?.getStackInSlot(this.player.inventory.selectedSlotIndex);
+        if (heldForWeapon && heldForWeapon.id === 568) {
+            if (button === "KeyR") {
+                if (this.pistolAmmo > 0) this.weaponAnimation = "easy_reload";
+                else { this.weaponAnimation = "final_shot_and_full_reload"; this.pistolReloadPending = true; }
+                return;
+            }
+            if (button === "KeyI") { this.weaponAnimation = "inspect"; return; }
+            if (button === "KeyG") { this.weaponAnimation = "easy_reload"; return; }
+            if (button === "KeyH") { this.weaponAnimation = "holster"; return; }
+            if (button === "KeyQ") { this.weaponAnimation = "scene"; return; }
+        }
         if (button === "KeyL") {
             this.soundManager.playSound("random.click", 0, 0, 0, 1.0, 1.0);
             this.displayScreen(new GuiAchievements(null));
@@ -2121,6 +2159,31 @@ export default class Minecraft {
         }
     }
 
+    firePistol() {
+        const p = this.player;
+        if (!p || !this.world) return;
+        const eye = p.getPositionEyes(this.timer.partialTicks);
+        const look = p.getLook(this.timer.partialTicks);
+        const reach = 32;
+        const end = { x: eye.x + look.x * reach, y: eye.y + look.y * reach, z: eye.z + look.z * reach };
+        let best = null, bestT = 1;
+        for (const ent of this.world.entities) {
+            if (ent === p || !ent.boundingBox) continue;
+            if (ent.constructor.name === "RemotePlayerEntity" && !this.isPvpEnabled()) continue;
+            const hit = ent.boundingBox.grow(0.1, 0.1, 0.1).calculateIntercept(eye, end);
+            if (hit !== null && hit < bestT) { best = ent; bestT = hit; }
+        }
+        const trailLength = best ? reach * bestT : reach;
+        // Simple visible bullet trail made from short smoke puffs.
+        if (this.particleManager) {
+            for (let i = 1; i <= 24; i++) {
+                const t = Math.min(1, i / 24) * (trailLength / reach);
+                this.particleManager.spawnCustomSmoke(this.world, eye.x + look.x * reach * t, eye.y + look.y * reach * t, eye.z + look.z * reach * t, 0xD7D7D7);
+            }
+        }
+        if (best && typeof best.takeHit === "function") best.takeHit(p, 8, "pistol");
+    }
+
     onMouseClicked(button) {
         if (this.cameraManager?.placement) { if(button===0)this.cameraManager.confirmPlacement(); else if(button===2)this.cameraManager.cancelPlacement(); return; }
         if (this.player && this.player.isCameraman) return;
@@ -2130,6 +2193,22 @@ export default class Minecraft {
 
             let heldStack = this.player.inventory.getStackInSlot(this.player.inventory.selectedSlotIndex);
             let heldId = heldStack ? heldStack.id : 0;
+
+            if (heldId === 568 && button === 0) {
+                // Left click fires. The last round uses the full reload segment.
+                if (this.pistolAmmo > 1) {
+                    this.pistolAmmo--;
+                    this.weaponAnimation = "fire";
+                    this.firePistol();
+                } else if (this.pistolAmmo === 1) {
+                    this.pistolAmmo = 0;
+                    this.pistolReloadPending = true;
+                    this.weaponAnimation = "final_shot_and_full_reload";
+                    this.firePistol();
+                }
+                // Do not let normal Minecraft attack handling swing the arm.
+                return;
+            }
 
             // Debug Stick Logic
             if (heldId === 449) {
@@ -2233,7 +2312,9 @@ export default class Minecraft {
                 let best = null;
                 let bestDist = Infinity;
                 for (let ent of this.world.entities) {
-                    if (ent === this.player || ent.constructor.name === "RemotePlayerEntity") continue;
+                    if (ent === this.player) continue;
+                    // Other players are only valid targets when PVP is on.
+                    if (ent.constructor.name === "RemotePlayerEntity" && !this.isPvpEnabled()) continue;
                     
                     // Expand hitbox slightly for hit detection to match vanilla behavior
                     const border = 0.1;
@@ -2252,7 +2333,9 @@ export default class Minecraft {
                 // Fallback: Check if we are inside any entity (Distance 0 hit)
                 if (!best) {
                     for (let ent of this.world.entities) {
-                        if (ent === this.player || ent.constructor.name === "RemotePlayerEntity") continue;
+                        if (ent === this.player) continue;
+                    // Other players are only valid targets when PVP is on.
+                    if (ent.constructor.name === "RemotePlayerEntity" && !this.isPvpEnabled()) continue;
                         if (ent.boundingBox.containsPoint(eye.x, eye.y, eye.z)) {
                             best = ent;
                             bestDist = 0;
@@ -2314,8 +2397,16 @@ export default class Minecraft {
 
                     // If entity supports takeHit, call it
                     try {
-                        if (typeof best.takeHit === 'function') {
-                            best.takeHit(this.player, damage);
+                        // Another player's health is owned by their own client,
+                        // so a PVP hit is sent rather than applied here. We only
+                        // play the local flash/sound as immediate feedback.
+                        const isRemotePlayer = best.constructor.name === "RemotePlayerEntity";
+                        if (isRemotePlayer) {
+                            this.multiplayer?.sendPlayerDamage(best, damage, this.player);
+                        }
+
+                        if (isRemotePlayer || typeof best.takeHit === 'function') {
+                            if (!isRemotePlayer) best.takeHit(this.player, damage);
                             
                             // Apply durability loss to weapon on hit
                             if (this.player.gameMode !== 1) {

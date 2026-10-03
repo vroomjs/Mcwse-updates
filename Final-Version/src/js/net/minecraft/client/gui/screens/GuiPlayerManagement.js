@@ -46,6 +46,18 @@ export default class GuiPlayerManagement extends GuiScreen {
             mp.setPermission(this.clientId, "canFly", !perms.canFly);
             this.init();
         }));
+        y += 26;
+
+        const coProducer=mp.isCoProducer(this.clientId);
+        this.buttonList.push(new GuiButton(coProducer ? "Remove Co Producer" : "Make Co Producer", centerX - 100, y, 178, 20, () => {
+            if(coProducer) mp.removeCoProducer(this.clientId); else mp.makeCoProducer(this.clientId);
+            this.init();
+        }));
+        if(coProducer){
+            this.buttonList.push(new GuiButton("✎", centerX + 82, y, 18, 20, () => {
+                import("./GuiCameraPermissions.js").then(m=>this.minecraft.displayScreen(new m.default(this,this.clientId)));
+            }));
+        }
         y += 32;
 
         // Kick / Ban

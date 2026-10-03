@@ -68,7 +68,7 @@ export default class CommandHandler {
             "iron_shovel": 256, "iron_pickaxe": 257, "iron_axe": 258, "bow": 261, "coal": 263,
             "diamond": 264, "iron_ingot": 265, "gold_ingot": 266, "quartz": 415,
             "quartz_block": 155, "chiseled_quartz": 156, "quartz_pillar": 157,
-            "crossbow": 499, "note_block": 25,
+            "crossbow": 499, "pistol": 568, "note_block": 25,
             "oak_door": 64, "birch_door": 205, "spruce_door": 219, "acacia_door": 426, "dark_oak_door": 427, "iron_door": 71, "cactus": 81, "vine": 106, "vines": 106,
             "acacia_log": 235, "dark_oak_log": 253, "stripped_oak_log": 254,
             "stripped_birch_log": 300, "stripped_spruce_log": 301,
@@ -344,6 +344,12 @@ export default class CommandHandler {
                 execute: (args) => this.seed(args)
             },
             {
+                name: "systemdialog",
+                usage: "/systemdialog <text>",
+                description: "Shows a system dialog popup",
+                execute: (args) => this.systemDialog(args)
+            },
+            {
                 name: "set",
                 usage: "/set @p speed <value>",
                 description: "Sets player walk speed (0-100)",
@@ -396,6 +402,12 @@ export default class CommandHandler {
                 usage: "/gamerule <rule> <value>",
                 description: "Sets a game rule value",
                 execute: (args) => this.gamerule(args)
+            },
+            {
+                name: "cheats",
+                usage: "/cheats <enable|disable>",
+                description: "Enables or disables cheats for this world",
+                execute: (args) => this.cheats(args)
             },
             {
                 name: "say",
@@ -464,7 +476,10 @@ export default class CommandHandler {
         const command = this.commands.find(c => c.name === commandName);
         if (command) {
             const cheatsEnabled = this.minecraft.world ? this.minecraft.world.gameRules.cheatsEnabled : true;
-            const nonCheatCommands = ["help", "seed", "me", "shareworld"];
+            // /cheats must remain available while cheats are disabled so the
+            // player can explicitly enable them, and while enabled so they
+            // can turn them back off.
+            const nonCheatCommands = ["help", "seed", "me", "shareworld", "cheats"];
             
             if (!cheatsEnabled && !nonCheatCommands.includes(commandName)) {
                 const result = "§cCheats are not enabled in this world.";
@@ -614,6 +629,14 @@ export default class CommandHandler {
 
     seed(args) {
         return "Seed: " + this.minecraft.world.seed.toString();
+    }
+
+    systemDialog(args) {
+        if (!this.minecraft.systemDialogs) return "System dialogs are unavailable.";
+        const text = args.join(" ").trim();
+        if (!text) return "Usage: /systemdialog <text>";
+        this.minecraft.systemDialogs.show(text);
+        return "Shown.";
     }
 
     tp(args) {
@@ -1016,6 +1039,24 @@ export default class CommandHandler {
         return "Ouch.";
     }
 
+    cheats(args) {
+        if (!this.minecraft.world) return "§cNo world is loaded.";
+        if (args.length !== 1 || !["enable", "disable"].includes(String(args[0]).toLowerCase())) {
+            return "Usage: /cheats <enable|disable>";
+        }
+
+        const enabled = String(args[0]).toLowerCase() === "enable";
+        this.minecraft.world.gameRules.cheatsEnabled = enabled;
+
+        // Cheats are authoritative in a LAN world. Keep every client on the
+        // same rule so command permissions and achievement blocking agree.
+        const mp = this.minecraft.multiplayer;
+        if (mp && mp.connected && mp.isHosting) {
+            mp.broadcast({ type: "gamerules", gr: { cheatsEnabled: enabled } });
+        }
+        return `Cheats ${enabled ? "enabled" : "disabled"}. Achievements are ${enabled ? "disabled in this world" : "available again"}.`;
+    }
+
     gamerule(args) {
         if (args.length < 2) return "Usage: /gamerule <rule> <value>";
         const rule = args[0].toLowerCase();
@@ -1025,6 +1066,18 @@ export default class CommandHandler {
             const bool = value === "true";
             this.minecraft.world.gameRules.doMobSpawning = bool;
             return "Game rule doMobSpawning has been updated to " + bool;
+        }
+
+        if (rule === "pvp") {
+            const bool = value === "true";
+            this.minecraft.world.gameRules.pvp = bool;
+            // Clients enforce PVP locally, so the rule has to reach them or
+            // they will keep accepting hits the host has just disallowed.
+            const mp = this.minecraft.multiplayer;
+            if (mp && mp.connected && mp.isHosting) {
+                mp.broadcast({ type: "gamerules", gr: { pvp: bool } });
+            }
+            return "Game rule pvp has been updated to " + bool;
         }
 
         return "§cUnknown game rule: " + rule;
