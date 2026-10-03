@@ -1,0 +1,27 @@
+# Netlify configuration for vroomjs/Mcwse-updates
+#
+# The playable site lives in Final-Version/, not at the repo root, so Netlify
+# must publish that subdirectory — otherwise it serves an empty root and the
+# deploy 404s.
+#
+# There is no build step: this is a static ES-module app (importmap + three.js
+# vendored in Final-Version/libraries/), served exactly as committed.
+
+[build]
+  publish = "Final-Version"
+
+# deploy-6 deliberately removed the service worker because its cache-first
+# strategy kept serving players stale bundles. Caching the HTML at the edge
+# would reintroduce exactly that problem, so revalidate it on every request.
+# Assets are content-addressed by name only (no hashing), so they're left on
+# Netlify's defaults rather than being pinned long-term.
+
+[[headers]]
+  for = "/*.html"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+[[headers]]
+  for = "/"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
