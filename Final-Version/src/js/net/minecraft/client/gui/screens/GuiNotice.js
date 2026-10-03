@@ -16,44 +16,44 @@ export default class GuiNotice extends GuiScreen {
         }
 
         this.mode = "patchnotes";
-        this.notice = "Welcome! Deploy 4 adds LAN co-producers, private camera feeds, world backups, and core gameplay fixes.";
-        this.title = "Minecraft Websim Edition 1.04 - Deploy 4";
+        this.notice = "Welcome! This deploy adds reliable multiplayer world rejoining and expanded broadcast camera controls.";
+        this.title = "Minecraft Websim Edition 1.07 - Deploy 7.2";
         this.sections = [
             {
-                title: "LAN & Production",
+                title: "Multiplayer World Sync",
                 items: [
-                    "Added co-producers for LAN worlds.",
-                    "Owners can grant camera permissions.",
-                    "Added camera feed visibility controls.",
-                    "Added experimental Manage LAN.",
-                    "Non-producers see hidden camera previews.",
-                    "Added disabled streaming controls for guests."
+                    "Host-authoritative multiplayer world state.",
+                    "Placed blocks remain visible after clients rejoin.",
+                    "Broken blocks persist as explicit air entries.",
+                    "World diffs apply after terrain generation.",
+                    "Persistent player UUIDs survive PeerJS reconnects.",
+                    "Host restores player position, inventory, armor, and gamemode.",
+                    "Single-player saves and client preferences remain separate."
                 ]
             },
             {
-                title: "Worlds & Saving",
+                title: "Broadcast Cameras",
                 items: [
-                    "Create Backup now exports a ZIP archive.",
-                    "Backups use a Minecraft-like folder layout.",
-                    "ZIP and legacy JSON imports are supported.",
-                    "World chunks save as separate records.",
-                    "Guest player data is saved on disconnect.",
-                    "Rejoining restores player progress."
+                    "Added Static, Chase, Player POV, and Cameraman sources.",
+                    "Chase cameras keep the target player in frame.",
+                    "Chase camera distance, height, smoothness, FOV, yaw, pitch, and roll are editable.",
+                    "Camera properties support experimental buttons and sliders.",
+                    "Camera placement includes a live bottom-right camera preview.",
+                    "Placement preview is removed after placing or cancelling."
                 ]
             },
             {
-                title: "Gameplay & Quality of Life",
+                title: "Interface & Reliability",
                 items: [
-                    "Added /cheats enable or disable.",
-                    "Cheat-enabled worlds pause achievements.",
-                    "LAN block drops sync immediately.",
-                    "Fixed command-block animation sheets.",
-                    "Added server refresh and re-ping controls.",
-                    "Improved co-producer camera permissions."
+                    "Improved camera source and properties interfaces.",
+                    "Added experimental Camera Studio and Camera Settings entry points.",
+                    "Fixed camera property text fields and slider labels.",
+                    "Preserved existing PeerJS multiplayer and broadcast behavior.",
+                    "Kept camera IDs and existing static camera compatibility."
                 ]
             }
         ];
-        this.footer = "Deploy 4: MineWatch is available at /watch/ after opening a world to LAN and starting a broadcast.";
+        this.footer = "Deploy 7.2: Host a LAN world to test authoritative rejoining and open Camera Studio to test the camera placement preview.";
     }
 
     init() {

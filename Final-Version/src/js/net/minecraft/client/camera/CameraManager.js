@@ -23,10 +23,14 @@ export default class CameraManager {
         this.returnCameraId = null;
         this.lastMonitorRender = 0; this.monitorCursor = 0;
         this.activeRemoteWasCameraman = false;
+        this.triggerZones = new Map();
+        this.triggerCooldowns = new Map();
+        this.triggerInside = new Map();
+        this.triggerVisuals = new Map();
     }
 
     attach() { const scene=this.minecraft.worldRenderer?.scene; if (scene && this.group.parent!==scene) scene.add(this.group); }
-    clear() { this.staticCameras.clear(); this.models.forEach(m=>this.disposeModel(m)); this.models.clear(); this.group.clear(); }
+    clear() { this.staticCameras.clear(); this.triggerVisuals.forEach(v=>{this.group.remove(v);v.geometry?.dispose?.();v.material?.dispose?.();});this.triggerVisuals.clear(); this.triggerZones.clear(); this.triggerCooldowns.clear(); this.triggerInside.clear(); this.models.forEach(m=>this.disposeModel(m)); this.models.clear(); this.group.clear(); }
     disposeModel(root) { root.traverse(o=>{o.geometry?.dispose?.();if(o.material)(Array.isArray(o.material)?o.material:[o.material]).forEach(m=>m.dispose?.());});root.userData?.previewTexture?.dispose?.(); }
 
     makeModel(recording=false) {
@@ -49,14 +53,16 @@ export default class CameraManager {
     createCamera(data={}, sync=true) {
         const mp=this.minecraft.multiplayer, cp=mp?.cameraPermissions?.();
         if(sync && mp?.connected && !mp.isHosting && !cp?.create) return null;
+        const allowed=new Set(['static','chase']);
+        if(!(data instanceof StaticCamera) && data.type && !allowed.has(String(data.type))) return null;
         const camera=data instanceof StaticCamera?data:new StaticCamera(data);
         this.staticCameras.set(camera.id,camera); this.attach(); this.ensureModel(camera);
         if(sync) this.minecraft.multiplayer?.sendCameraMessage?.("camera_create",camera.toJSON());
         return camera;
     }
-    updateCamera(id,data={},sync=true) { const mp=this.minecraft.multiplayer,cp=mp?.cameraPermissions?.(); if(sync&&mp?.connected&&!mp.isHosting&&!cp?.edit)return null; const c=this.staticCameras.get(id); if(!c)return null; c.update(data); this.updateModel(c); if(this.session.sourceId===id)this.minecraft.broadcastMedia?.updateSource(id); if(sync)this.minecraft.multiplayer?.sendCameraMessage?.("camera_update",c.toJSON()); return c; }
+    updateCamera(id,data={},sync=true) { const mp=this.minecraft.multiplayer,cp=mp?.cameraPermissions?.(); if(sync&&mp?.connected&&!mp.isHosting&&!cp?.edit)return null; const c=this.staticCameras.get(id); if(!c)return null; if(c.type==='chase'){c.settings={...c.settings};if(data.yaw!==undefined)c.settings.yawOffset=Number(data.yaw);if(data.pitch!==undefined)c.settings.pitchOffset=Number(data.pitch);} c.update(data); this.updateModel(c); if(this.session.sourceId===id)this.minecraft.broadcastMedia?.updateSource(id); if(sync)this.minecraft.multiplayer?.sendCameraMessage?.("camera_update",c.toJSON()); return c; }
     removeCamera(id,sync=true) { const mp=this.minecraft.multiplayer,cp=mp?.cameraPermissions?.(); if(sync&&mp?.connected&&!mp.isHosting&&!cp?.edit)return false; const c=this.staticCameras.get(id); if(!c)return false; if(this.returnCameraId===id)this.returnCameraId=null; this.staticCameras.delete(id); const m=this.models.get(id); if(m){this.group.remove(m);this.disposeModel(m);this.models.delete(id);} if(sync)this.minecraft.multiplayer?.sendCameraMessage?.("camera_remove",{id}); if(this.session.sourceId===id)this.selectSource("player:local"); return true; }
-    load(list=[]) { this.clear(); for(const data of list||[])this.createCamera(data,false); }
+    load(list=[]) { this.clear(); for(const data of list||[]){if(!['static','chase'].includes(String(data.type||'static')))continue;this.createCamera(data,false);} }
     serialize() { return [...this.staticCameras.values()].map(c=>c.toJSON()); }
     ensureModel(c) { let m=this.models.get(c.id); if(!m){m=this.makeModel(false);this.addPreviewMonitor(m,c);this.models.set(c.id,m);this.group.add(m);} this.updateModel(c); return m; }
     addPreviewMonitor(root,camera){
@@ -76,17 +82,24 @@ export default class CameraManager {
         if(m.userData.recordingLight)m.userData.recordingLight.visible=!!(this.session.active&&this.session.sourceId===c.id); }
     applyRotation(obj,yaw,pitch,roll=0) { obj.rotation.order="YXZ"; obj.rotation.set(-pitch*Math.PI/180,-(yaw+180)*Math.PI/180,roll*Math.PI/180); }
 
+    createPlacementPreview(){if(this.placementPreview)return;const wrap=document.createElement('div');wrap.style.cssText='position:fixed;right:18px;bottom:18px;width:240px;height:150px;background:#000;border:3px solid #35e06f;z-index:99999;box-shadow:0 4px 18px #0009;pointer-events:none';const canvas=document.createElement('canvas');canvas.width=480;canvas.height=270;canvas.style.cssText='width:100%;height:100%;image-rendering:auto';wrap.appendChild(canvas);const label=document.createElement('div');label.textContent='CAMERA PREVIEW';label.style.cssText='position:absolute;left:6px;top:5px;color:#35e06f;font:bold 12px monospace;text-shadow:1px 1px #000';wrap.appendChild(label);document.body.appendChild(wrap);this.placementPreview={wrap,canvas};}
+    destroyPlacementPreview(){if(this.placementPreview){this.placementPreview.wrap.remove();this.placementPreview=null;}}
+    renderPlacementPreview(){const q=this.placementPreview,st=this.placement;if(!q||!st||st.kind==='trigger'||!this.minecraft.worldRenderer)return;const d=st.data;const src={...d,type:'static',online:true,dimension:this.minecraft.world?.dimension||0};const wasVisible=st.ghost.visible;st.ghost.visible=false;try{this.minecraft.worldRenderer.renderBroadcastView(src,q.canvas,0,'monitor');}catch(e){}finally{st.ghost.visible=wasVisible;}}
     startPlacement() {
         if (!this.minecraft.player || this.placement) return;
-        this.attach(); const ghost=this.makeModel(false);
+        this.attach(); this.createPlacementPreview(); const ghost=this.makeModel(false);
         ghost.traverse(o=>{if(o.material){o.material=o.material.clone();o.material.transparent=true;o.material.opacity=.42;o.material.depthWrite=false;}});
-        const cone=new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.ConeGeometry(1.15,2.5,4,1,true)),new THREE.LineBasicMaterial({color:0x66ccff,transparent:true,opacity:.35}));
-        cone.rotation.x=-Math.PI/2;cone.position.z=-1.65;ghost.add(cone);this.group.add(ghost);this.placement={ghost};this.updatePlacement();
+        // Placement-only green view-volume preview. It is removed with the
+        // placement ghost as soon as the camera is placed or cancelled.
+        const cone=new THREE.Mesh(new THREE.ConeGeometry(1.15,2.5,4,1,true),new THREE.MeshBasicMaterial({color:0x35e06f,transparent:true,opacity:0,side:THREE.DoubleSide,depthWrite:false,wireframe:false}));
+        cone.rotation.x=-Math.PI/2;cone.position.z=-1.65;ghost.add(cone);
+        const frame=new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.PlaneGeometry(2.1,1.35)),new THREE.LineBasicMaterial({color:0x35e06f,transparent:true,opacity:.8}));
+        frame.position.z=-2.9;frame.visible=false;ghost.add(frame);this.group.add(ghost);this.placement={ghost};this.updatePlacement();
         this.minecraft.addMessageToChat("§bCamera placement: aim, left click to place; right click/Esc to cancel.");
     }
-    updatePlacement(){const p=this.minecraft.player,st=this.placement;if(!p||!st)return;const v=p.getVectorForRotation(p.rotationPitch,p.rotationYaw);st.data={name:`Camera ${this.staticCameras.size+1}`,position:{x:p.x+v.x*2,y:p.y+p.getEyeHeight()+v.y*2,z:p.z+v.z*2},yaw:p.rotationYaw,pitch:p.rotationPitch,roll:0,fov:70,dimension:this.minecraft.world?.dimension||0};st.ghost.position.set(st.data.position.x,st.data.position.y,st.data.position.z);this.applyRotation(st.ghost,st.data.yaw,st.data.pitch,0);}
-    confirmPlacement(){if(!this.placement)return null;const data=this.placement.data;this.cancelPlacement(false);const c=this.createCamera(data,true);this.minecraft.openCameraConfig?.(c.id);return c;}
-    cancelPlacement(message=true){if(!this.placement)return;const g=this.placement.ghost;this.group.remove(g);this.disposeModel(g);this.placement=null;if(message)this.minecraft.addMessageToChat("§7Camera placement cancelled.");}
+    updatePlacement(){const p=this.minecraft.player,st=this.placement;if(!p||!st)return;if(st.kind==='trigger'){const v=p.getVectorForRotation(p.rotationPitch,p.rotationYaw);st.data.position={x:p.x+v.x*4,y:p.y+p.getEyeHeight(),z:p.z+v.z*4};st.ghost.position.set(st.data.position.x,st.data.position.y,st.data.position.z);st.ghost.scale.set(st.data.size.x,st.data.size.y,st.data.size.z);return;}const v=p.getVectorForRotation(p.rotationPitch,p.rotationYaw);st.data={name:`Camera ${this.staticCameras.size+1}`,position:{x:p.x+v.x*2,y:p.y+p.getEyeHeight()+v.y*2,z:p.z+v.z*2},yaw:p.rotationYaw,pitch:p.rotationPitch,roll:0,fov:70,dimension:this.minecraft.world?.dimension||0};st.ghost.position.set(st.data.position.x,st.data.position.y,st.data.position.z);this.applyRotation(st.ghost,st.data.yaw,st.data.pitch,0);}
+    confirmPlacement(){if(!this.placement)return null;if(this.placement.kind==='trigger')return this.confirmTriggerPlacement();const data=this.placement.data;this.cancelPlacement(false);const c=this.createCamera(data,true);this.minecraft.openCameraConfig?.(c.id);return c;}
+    cancelPlacement(message=true){if(!this.placement)return;this.destroyPlacementPreview();const g=this.placement.ghost;this.group.remove(g);this.disposeModel(g);this.placement=null;if(message)this.minecraft.addMessageToChat("§7Camera placement cancelled.");}
     placeStaticCamera(){this.startPlacement();}
     getLookedAtCamera(maxDistance=5){const p=this.minecraft.player;if(!p)return null;const eye=new THREE.Vector3(p.x,p.y+p.getEyeHeight(),p.z),dir=p.getVectorForRotation(p.rotationPitch,p.rotationYaw);let best=null,bestT=maxDistance;for(const c of this.staticCameras.values()){if(!c.online||c.dimension!==(this.minecraft.world?.dimension||0))continue;const d=new THREE.Vector3(c.position.x-eye.x,c.position.y-eye.y,c.position.z-eye.z),t=d.x*dir.x+d.y*dir.y+d.z*dir.z;if(t<0||t>bestT)continue;const perp=d.clone().sub(new THREE.Vector3(dir.x,dir.y,dir.z).multiplyScalar(t)).length();if(perp<.65){best=c;bestT=t;}}return best;}
     getPlayerSource(player=this.minecraft.player) { return new CameraSource({id:player===this.minecraft.player?"player:local":`player:${player.id}`,name:player.username||"Player POV",type:player.isCameraman?"cameraman":"player",position:{x:player.x,y:player.y+player.getEyeHeight(),z:player.z},yaw:player.rotationYaw,pitch:player.rotationPitch,roll:player.cameraRoll||0,fov:player.cameraFov||this.minecraft.settings.fov,online:true,dimension:this.minecraft.world?.dimension||0}); }
@@ -125,7 +138,41 @@ export default class CameraManager {
         mp?.sendCameraMessage?.("broadcast_state",state);
     }
     getBroadcastCanvas(){return this.broadcastCanvas;}
-    tick(){ this.attach(); if(this.placement)this.updatePlacement(); for(const c of this.staticCameras.values())this.updateModel(c); if(this.activeRemoteWasCameraman&&!this.getSource(this.session.sourceId)){this.activeRemoteWasCameraman=false;if(this.selectSource("player:local",true))this.minecraft.addMessageToChat("§eCameraman left the world; switched to streamer POV.");} }
+    updateTriggerVisual(z){let v=this.triggerVisuals.get(z.id);if(!v){v=new THREE.Mesh(new THREE.BoxGeometry(1,1,1),new THREE.MeshBasicMaterial({color:z.type==='exit'?0xff3030:0x35e06f,transparent:true,opacity:z.opacity,depthWrite:false,wireframe:false}));v.name='triggerZone:'+z.id;this.group.add(v);this.triggerVisuals.set(z.id,v);}v.position.set(z.position.x,z.position.y,z.position.z);v.scale.set(z.size.x,z.size.y,z.size.z);v.material.color.set(z.type==='exit'?0xff3030:0x35e06f);v.material.opacity=z.opacity;v.visible=!!z.enabled;}
+    startTriggerPlacement(){if(this.placement)return;this.attach();this.placement={kind:'trigger',data:{type:'enter',position:{x:0,y:0,z:0},size:{x:8,y:4,z:8},opacity:.22,enabled:true,actions:[]},ghost:new THREE.Mesh(new THREE.BoxGeometry(1,1,1),new THREE.MeshBasicMaterial({color:0x35e06f,transparent:true,opacity:.35,wireframe:true}))};this.group.add(this.placement.ghost);this.updatePlacement();this.minecraft.addMessageToChat('§aTrigger placement: aim, left click to place; right click/Esc to cancel.');}
+    confirmTriggerPlacement(){const d=this.placement.data;this.cancelPlacement(false);const z=this.addTrigger(d);this.minecraft.openTriggerConfig?.(z.id);return z;}
+    addTrigger(data={}){const id=String(data.id||`trigger-${Date.now().toString(36)}`);const z={id,type:data.type||'enter',position:{x:Number(data.position?.x||0),y:Number(data.position?.y||0),z:Number(data.position?.z||0)},size:{x:Number(data.size?.x||1),y:Number(data.size?.y||1),z:Number(data.size?.z||1)},opacity:Number(data.opacity??.22),enabled:data.enabled!==false,conditions:data.conditions||[],actions:data.actions||[{type:'switch',cameraId:data.cameraId}],cooldown:Number(data.cooldown||3000),priority:Number(data.priority||0)};this.triggerZones.set(id,z);this.updateTriggerVisual(z);return z;}
+    removeTrigger(id){const v=this.triggerVisuals.get(id);if(v){this.group.remove(v);v.geometry?.dispose?.();v.material?.dispose?.();this.triggerVisuals.delete(id);}return this.triggerZones.delete(id);}
+    serializeTriggers(){return [...this.triggerZones.values()].map(z=>({...z,position:{...z.position},size:{...z.size}}));}
+    evaluateTriggers(){const p=this.minecraft.player;if(!p)return;const now=performance.now();const hits=[];for(const z of this.triggerZones.values()){if(!z.enabled)continue;const q=z.position,s=z.size,inside=p.x>=q.x-s.x/2&&p.x<=q.x+s.x/2&&p.y>=q.y-s.y/2&&p.y<=q.y+s.y/2&&p.z>=q.z-s.z/2&&p.z<=q.z+s.z/2,key=z.id,was=this.triggerInside.get(key)||false;this.triggerInside.set(key,inside);const fire=z.type==='exit'?!inside&&was:inside&&!was;if(fire&&now-(this.triggerCooldowns.get(key)||0)>=z.cooldown)hits.push(z);}hits.sort((a,b)=>b.priority-a.priority);const z=hits[0];if(!z)return;this.triggerCooldowns.set(z.id,now);for(const a of z.actions||[]){if(a.type==='switch'&&a.cameraId)this.selectSource(a.cameraId,true);else if(a.type==='return'&&this.returnCameraId)this.selectSource(this.returnCameraId,true);else if(a.type==='fov'&&this.getSource())this.getSource().fov=Number(a.value||70);}}
+    findTarget(id){
+        // An unassigned camera targets the owner/streamer by default. This
+        // keeps follow-like cameras useful in single-player and when no remote
+        // players are present.
+        if(!id || id==='player:local') return this.minecraft.player;
+        for(const p of this.minecraft.multiplayer?.remotePlayers?.values?.()||[]) if(p.id===id || `player:${p.id}`===id || p.username===id) return p;
+        return null;
+    }
+    updateDynamicCamera(c, now=performance.now()){
+        const type=String(c.type||'static').toLowerCase(), target=this.findTarget(c.target || c.settings?.target);
+        if(['chase'].includes(type) && !target){c.online=false;return;}
+        if(type==='chase'){
+            const yaw=(target.rotationYaw||0)*Math.PI/180, behind=type==='chase'?Number(c.settings.distance??8):Number(c.settings.distance??6);
+            const off=Number(c.settings.offset||0), desired={x:target.x-Math.sin(yaw)*behind+Math.cos(yaw)*off,y:target.y+Number(c.settings.height??3),z:target.z+Math.cos(yaw)*behind+Math.sin(yaw)*off};
+            const a=Math.max(.02,Math.min(1,Number(c.settings.smoothness??.15))); c.position.x+=(desired.x-c.position.x)*a;c.position.y+=(desired.y-c.position.y)*a;c.position.z+=(desired.z-c.position.z)*a;
+            // Dynamic cameras always aim at the target, rather than inheriting
+            // the target's own facing direction.
+            const lookY=target.y+Number(target.getEyeHeight?.()||1.6)+Number(c.settings.lookAheadY||0);
+            const dx=target.x-c.position.x, dy=lookY-c.position.y, dz=target.z-c.position.z;
+            c.yaw=Math.atan2(-dx,dz)*180/Math.PI+Number(c.settings.yawOffset||0);
+            c.pitch=-Math.atan2(dy,Math.max(.001,Math.hypot(dx,dz)))*180/Math.PI+Number(c.settings.pitchOffset||0);
+            c.online=true;
+        } else if(type==='security'){
+            const range=Number(c.settings.horizontalRange??45), speed=Number(c.settings.scanSpeed??.5);c.yaw+=Math.sin(now*.001*speed)*range*.002;
+        } else if(type==='cinematic'){
+            const points=c.settings.points||[];if(points.length>1){const dur=Math.max(100,Number(c.settings.duration||3000)), t=(now%(dur*(points.length-1)))/dur, i=Math.min(points.length-2,Math.floor(t)), f=t-i;const a=points[i],b=points[i+1];for(const k of ['x','y','z'])c.position[k]=(a.position?.[k]||0)+((b.position?.[k]||0)-(a.position?.[k]||0))*f;c.yaw=(a.yaw||0)+((b.yaw||0)-(a.yaw||0))*f;c.pitch=(a.pitch||0)+((b.pitch||0)-(a.pitch||0))*f;}}
+    }
+    tick(){ this.attach(); if(this.placement){this.updatePlacement();this.renderPlacementPreview();} const now=performance.now(); for(const c of this.staticCameras.values()){this.updateDynamicCamera(c,now);this.updateModel(c);} if(this.activeRemoteWasCameraman&&!this.getSource(this.session.sourceId)){this.activeRemoteWasCameraman=false;if(this.selectSource("player:local",true))this.minecraft.addMessageToChat("§eCameraman left the world; switched to streamer POV.");} }
 
     isInsideOwnerRender(source){
         const p=this.minecraft.player;if(!p||!source)return false;

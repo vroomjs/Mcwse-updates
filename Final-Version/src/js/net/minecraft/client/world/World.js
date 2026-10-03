@@ -94,6 +94,9 @@ export default class World {
         this.worldType = 0; // 0: Default, 1: Flat, 2: Small, 3: Large, 6: Debug
         this.savedData = null;
         this.worldId = worldId;
+        this.isMultiplayer = false;
+        this.isHost = false;
+        this.authoritativeDiff = new Map();
         this.gameMode = gameMode; // 0: Survival, 1: Creative
         
         this.spawnBiome = "all"; // plains, desert, snow, forest, all
@@ -807,6 +810,16 @@ export default class World {
             // CRITICAL FIX: Check for existing modifications in the savedData cache (session persistence)
             if (this.savedData && this.savedData.c && this.savedData.c[index]) {
                 this.applyCompressedChunk(chunk, this.savedData.c[index]);
+            }
+            // Final generation step: overlay host-authoritative edits so terrain
+            // generation can never overwrite multiplayer changes.
+            if (this.authoritativeDiff && this.authoritativeDiff.size) {
+                for (const [key, id] of this.authoritativeDiff) {
+                    const [bx, by, bz] = key.split(',').map(Number);
+                    if ((bx >> 4) === x && (bz >> 4) === z && by >= 0 && by <= World.TOTAL_HEIGHT) {
+                        chunk.setBlockAt(bx & 15, by, bz & 15, Number(id), 0);
+                    }
+                }
             }
 
             // Register and mark as loaded

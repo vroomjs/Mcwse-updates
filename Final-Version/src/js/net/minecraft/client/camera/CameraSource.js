@@ -10,7 +10,7 @@ export default class CameraSource {
         this.fov = Math.max(20, Math.min(120, Number(data.fov || 70)));
         this.online = data.online !== false;
         this.switchBackOnRender = !!data.switchBackOnRender;
-        this.dimension = Number(data.dimension || 0);
+        this.dimension = Number(data.dimension || 0); this.target=data.target||null; this.settings={...(data.settings||{})}; this.priority=Number(data.priority||0);
     }
 
     static createId() {
@@ -23,11 +23,11 @@ export default class CameraSource {
         for (const key of ["yaw", "pitch", "roll", "dimension"]) if (data[key] !== undefined) this[key] = Number(data[key]);
         if (data.fov !== undefined) this.fov = Math.max(20, Math.min(120, Number(data.fov)));
         if (data.online !== undefined) this.online = !!data.online;
-        if (data.switchBackOnRender !== undefined) this.switchBackOnRender = !!data.switchBackOnRender;
+        if (data.switchBackOnRender !== undefined) this.switchBackOnRender = !!data.switchBackOnRender; if(data.type!==undefined)this.type=String(data.type); if(data.target!==undefined)this.target=data.target; if(data.settings!==undefined)this.settings={...this.settings,...data.settings};
         return this;
     }
 
     toJSON() {
-        return { id: this.id, name: this.name, type: this.type, position: {...this.position}, yaw: this.yaw, pitch: this.pitch, roll: this.roll, fov: this.fov, online: this.online, switchBackOnRender: this.switchBackOnRender, dimension: this.dimension };
+        return { id: this.id, name: this.name, type: this.type, position: {...this.position}, yaw: this.yaw, pitch: this.pitch, roll: this.roll, fov: this.fov, online: this.online, switchBackOnRender: this.switchBackOnRender, dimension: this.dimension, target:this.target, settings:{...this.settings}, priority:this.priority };
     }
 }

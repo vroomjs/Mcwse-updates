@@ -67,6 +67,11 @@ export default class Multiplayer {
         this.mobUpdateTimer = 0;
 
         this.blockUpdateBuffer = [];
+        // Host-authoritative persistent block diff. Clients keep this only in memory.
+        this.authoritativeDiff = new Map();
+        this.playerUuid = (() => { try { let v=localStorage.getItem('mc_player_uuid'); if(!v){v=crypto.randomUUID();localStorage.setItem('mc_player_uuid',v);} return v;} catch(e){return 'local-'+Math.random().toString(36).slice(2);}})();
+        this.playerDataByUuid = new Map();
+        this.pendingClientLoad = null;
         this.pendingJoinRequests = [];
         this.joinHoldTicks = 0;
         this.joinNotice = null;
@@ -356,6 +361,9 @@ export default class Multiplayer {
                 // failed to register is never offered again.
                 this.rememberLanCode(world, this.lanCode);
                 this.minecraft.broadcastMedia?.attachPeer(this.peer);
+                world.isMultiplayer = true;
+                world.isHost = true;
+                world.authoritativeDiff = this.authoritativeDiff;
                 this.minecraft.addMessageToChat("§eLAN Game hosted. Code: " + this.lanCode);
                 
                 // Clear any stale mob data from the optional persistence mirror.
@@ -389,7 +397,10 @@ export default class Multiplayer {
                             world.spawn.x,
                             world.spawn.y,
                             world.spawn.z
-                        ] : null
+                        ] : null,
+                        protocolVersion: 2,
+                        // Explicit air entries are intentional: never omit broken blocks.
+                        diff: Array.from(this.authoritativeDiff, ([key, id]) => [key, id])
                     });
                     this.sendCameraSnapshot(conn);
                 };
@@ -677,7 +688,7 @@ export default class Multiplayer {
             const owner=hostName?`${hostName}'s`:'the';
 
             if(this.enterOnApproval){
-                this.hostConn?.send({type:'client_join',username});
+                this.hostConn?.send({type:'client_join',username,playerUuid:this.playerUuid});
                 this.showSystemDialog(`Joining ${owner} world.`,{duration:2500});
                 this.pendingJoinResolve?.();this.pendingJoinResolve=null;
                 return;
@@ -777,7 +788,14 @@ export default class Multiplayer {
             // An approval that only saves the world to the list must not load
             // it, and the host sends world_info regardless.
             if (this.suppressWorldLoad) return;
+            if (data.protocolVersion !== 2) {
+                this.minecraft.addMessageToChat("§cIncompatible multiplayer protocol. Please update.");
+                return;
+            }
             const world = new World(this.minecraft, data.seed, "mp_" + this.lanCode, data.gameMode || 0);
+            world.isMultiplayer = true;
+            world.isHost = false;
+            world.authoritativeDiff = new Map(Array.isArray(data.diff) ? data.diff : []);
             world.worldType = data.worldType !== undefined ? data.worldType : 0;
             if (Array.isArray(data.superflatLayers) && data.superflatLayers.length > 0) {
                 world.superflatLayers = data.superflatLayers;
@@ -800,6 +818,13 @@ export default class Multiplayer {
             world.setSeed(data.seed);
             world.name = "LAN: " + this.lanCode;
             this.minecraft.loadWorld(world);
+            // The host may answer client_join before the client finishes loading.
+            // Apply the queued authoritative player state after the player exists.
+            if (this.pendingClientLoad) {
+                const restore = this.pendingClientLoad;
+                this.pendingClientLoad = null;
+                setTimeout(() => this.applyClientLoad(restore), 250);
+            }
         } else if (data.type === "pos") {
             this.handlePositionUpdate({ ...data, clientId: fromPeerId });
         } else if (data.type === "player_damage") {
@@ -852,7 +877,7 @@ export default class Multiplayer {
                 }
                 return;
             }
-            this.handleClientJoin({ username: data.username, clientId: fromPeerId });
+            this.handleClientJoin({ username: data.username, playerUuid: data.playerUuid, clientId: fromPeerId });
         } else if (data.type === "client_save" && this.isHosting) {
             this.handleClientSave(data);
         } else if (data.type === "client_load" && !this.isHosting) {
@@ -1132,11 +1157,11 @@ export default class Multiplayer {
 
     disconnect() {
         if (this.isHosting) this.minecraft.broadcastMedia?.stop("broadcaster_disconnected");
-        if (this.connected && !this.isHosting) {
-            this.saveClientData();
-        }
+        // Multiplayer clients never persist world or player state locally;
+        // send the authoritative host a final network snapshot instead.
+        if (this.connected && !this.isHosting) this.saveClientData();
         
-        // Give the final client_save packet a short delivery window before
+        // Give the final connection a short delivery window before
         // tearing down PeerJS. Previously a disconnect could destroy the
         // connection immediately, losing the departing player's position and
         // inventory on the host.
@@ -1353,6 +1378,8 @@ export default class Multiplayer {
 
     onBlockChanged(x, y, z, typeId, meta = 0) {
         if (!this.connected) return;
+        // Host is the sole durable source of truth. Air is stored explicitly.
+        if (this.isHosting) this.authoritativeDiff.set(`${x},${y},${z}`, typeId | 0);
         // Batch updates to prevent network flood and thread freezing
         this.blockUpdateBuffer.push({ x, y, z, id: typeId, m: meta });
     }
@@ -1393,6 +1420,7 @@ export default class Multiplayer {
         if (this.isHosting) {
             const syncedBlocks = [];
             for (const b of data.b) {
+                this.authoritativeDiff.set(`${b.x},${b.y},${b.z}`, (b.id | 0));
                 if (b.id === 0) {
                     this.minecraft.breakBlock(b.x, b.y, b.z, null, true);
                 } else {
@@ -1571,10 +1599,11 @@ export default class Multiplayer {
         const p = this.minecraft.player;
         this.broadcast({
             type: "client_save",
+            playerUuid: this.playerUuid,
             username: p.username || "Player",
             inventory: p.inventory.items.map(i => ({id: i.id, count: i.count, damage: i.damage})),
             armor: p.inventory.armor.map(i => ({id: i.id, count: i.count, damage: i.damage})),
-            pos: {x: p.x, y: p.y, z: p.z, yaw: p.rotationYaw, pitch: p.rotationPitch},
+            pos: {x: p.x, y: p.y, z: p.z},
             gameMode: p.gameMode
         });
     }
@@ -1630,7 +1659,8 @@ export default class Multiplayer {
     }
 
     handleClientJoin(data) {
-        const savedData = this.minecraft.world.playerData[data.username];
+        const key = data.playerUuid || data.username;
+        const savedData = this.minecraft.world.playerData[key] || this.playerDataByUuid.get(key);
         if (savedData) {
             const conn = this.connections.get(data.clientId);
             if (conn) conn.send({ type: "client_load", targetUser: data.username, data: savedData });
@@ -1638,11 +1668,14 @@ export default class Multiplayer {
     }
 
     handleClientSave(data) {
-        this.minecraft.world.playerData[data.username] = {
+        const key = data.playerUuid || data.username;
+        const record = {
             inventory: data.inventory, armor: data.armor,
             pos: data.pos, gameMode: data.gameMode,
             savedAt: Date.now()
         };
+        this.minecraft.world.playerData[key] = record;
+        this.playerDataByUuid.set(key, record);
         // A departing guest's data must survive a host refresh/crash, not just
         // remain in memory until the next periodic autosave.
         if (!this._playerDataSavePending) {
@@ -1654,13 +1687,19 @@ export default class Multiplayer {
     }
 
     handleClientLoad(data) {
-        if (!this.minecraft.player || data.targetUser !== this.minecraft.player.username) return;
+        if (!this.minecraft.player) { this.pendingClientLoad = data; return; }
+        this.applyClientLoad(data);
+    }
+
+    applyClientLoad(data) {
+        if (!this.minecraft.player) { this.pendingClientLoad = data; return; }
         const p = this.minecraft.player;
-        const d = data.data;
-        if (d.pos) p.setPosition(d.pos.x, d.pos.y, d.pos.z);
-        if (d.inventory) d.inventory.forEach((item, i) => { if(i < p.inventory.items.length) p.inventory.items[i] = item; });
-        if (d.armor) d.armor.forEach((item, i) => { if(i < p.inventory.armor.length) p.inventory.armor[i] = item; });
+        const d = data.data || {};
+        if (d.pos && [d.pos.x,d.pos.y,d.pos.z].every(Number.isFinite)) p.setPosition(d.pos.x, d.pos.y, d.pos.z);
+        if (d.inventory && p.inventory?.items) d.inventory.forEach((item, i) => { if(i < p.inventory.items.length) p.inventory.items[i] = item; });
+        if (d.armor && p.inventory?.armor) d.armor.forEach((item, i) => { if(i < p.inventory.armor.length) p.inventory.armor[i] = item; });
         if (Number.isFinite(d.gameMode)) p.gameMode = d.gameMode;
+        p.inventory?.markDirty?.();
         this.minecraft.addMessageToChat("§eRestored player data from host.");
     }
 

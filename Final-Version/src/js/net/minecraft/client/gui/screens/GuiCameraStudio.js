@@ -144,6 +144,7 @@ export default class GuiCameraStudio extends GuiScreen {
         const sc=L.scenes, scInner=Math.max(28,sc.w-8);
         this.buttonList.push(new GuiButton(sc.w<90?"> Main":"> Main Broadcast",sc.x+4,sc.y+T+3,scInner,18,()=>{}));
         if(sc.h>=T+3+18+20) this.buttonList.push(new GuiButton("+",sc.x+4,sc.y+sc.h-19,22,16,()=>{this.minecraft.displayScreen(null);cm.startPlacement();}));
+        if(sc.h>=T+3+18+40) this.buttonList.push(new GuiButton("TRIGGERS",sc.x+30,sc.y+sc.h-19,Math.max(48,sc.w-34),16,()=>{const p=this.minecraft.player;cm.startTriggerPlacement();}));
 
         // Source list: clicking cues PREVIEW, exactly like studio mode in OBS.
         const src=L.sources, sources=cm.listSources().filter(source=>this.canSeeSource(source));
@@ -152,7 +153,7 @@ export default class GuiCameraStudio extends GuiScreen {
         const sourceX=src.x+4, sourceW=Math.max(44,src.w-8);
         sources.slice(this.page*visible,this.page*visible+visible).forEach((source,i)=>{
             const preview=source.id===this.previewSourceId, program=source.id===cm.session.sourceId;
-            const type=source.type==="static"?"STATIC":source.type==="cameraman"?"CAM":"POV";
+            const type=source.type==="static"?"STATIC":source.type==="cameraman"?"PLAYER POV":String(source.type||"CAM").toUpperCase();
             const name=String(source.name||"Unnamed Camera");
             const label=sourceW<110?`${preview?">":" "}${program?"*":""} ${name}`:`${preview?">":" "}${program?" [PGM]":""} ${name} - ${type}`;
             this.buttonList.push(new GuiButton(label,sourceX,src.y+T+3+i*GuiCameraStudio.ROW_H,sourceW,17,()=>{
@@ -160,16 +161,16 @@ export default class GuiCameraStudio extends GuiScreen {
             }));
         });
         const preview=cm.getSource(this.previewSourceId);
-        const isStatic=preview?.type==="static";
+        const isStatic=!!preview;
         const sf=src.y+src.h-19;
         const cp=this.cameraPermissions();
         this.buttonList.push(new GuiButton("ADD",sourceX,sf,Math.max(24,Math.floor(sourceW*0.30)),16,()=>{this.minecraft.displayScreen(null);cm.startPlacement();}).setEnabled(cp.create));
         this.buttonList.push(new GuiButton(sourceW<120?"PROPS":"PROPERTIES",sourceX+Math.floor(sourceW*0.32),sf,Math.max(38,Math.floor(sourceW*0.40)),16,()=>{
-            if(isStatic)this.minecraft.displayScreen(new GuiCameraConfig(this,preview.id));
-        }).setEnabled(isStatic&&cp.edit));
+            if(isStatic){ if(this.experimental) import("../experimental/GuiExpCameraSettings.js").then(m=>this.minecraft.displayScreen(new m.default(this,preview.id))); else this.minecraft.displayScreen(new GuiCameraConfig(this,preview.id)); }
+        }).setEnabled(!!preview&&cp.edit));
         this.buttonList.push(new GuiButton("-",sourceX+Math.floor(sourceW*0.76),sf,Math.max(18,Math.floor(sourceW*0.24)),16,()=>{
             if(isStatic)this.minecraft.displayScreen(new GuiCameraConfig(this,preview.id,true));
-        }).setEnabled(isStatic&&cp.edit));
+        }).setEnabled(!!preview&&cp.edit));
 
         // Production controls. Four stacked buttons need ~105px; when the dock
         // is shorter than that they fold into a 2x2 grid with short labels.
@@ -205,8 +206,9 @@ export default class GuiCameraStudio extends GuiScreen {
 
     panel(stack,rect,title){
         const {x,y,w,h}=rect;
-        stack.fillStyle="#17191e";stack.fillRect(x,y,w,h);stack.strokeStyle="#3a3d45";stack.strokeRect(x+.5,y+.5,w-1,h-1);
-        stack.fillStyle="#23262c";stack.fillRect(x+1,y+1,w-2,GuiCameraStudio.TITLE_H-1);
+        const exp=!!this.experimental;
+        stack.fillStyle=exp?"#10283b":"#17191e";stack.fillRect(x,y,w,h);stack.strokeStyle=exp?"#286485":"#3a3d45";stack.strokeRect(x+.5,y+.5,w-1,h-1);
+        stack.fillStyle=exp?"#164866":"#23262c";stack.fillRect(x+1,y+1,w-2,GuiCameraStudio.TITLE_H-1);
         this.drawString(stack,title,x+5,y+4,0xd6d6d8);
     }
 
@@ -251,9 +253,11 @@ export default class GuiCameraStudio extends GuiScreen {
         const cm=this.minecraft.cameraManager,L=this.layout(),live=cm.session.active;
         this.L=L;
         const T=GuiCameraStudio.TITLE_H;
-        stack.fillStyle="#101216";stack.fillRect(0,0,this.width,this.height);
-        stack.fillStyle="#202329";stack.fillRect(0,0,this.width,L.topBar);
-        this.drawString(stack,"MINEWATCH STUDIO",8,7,0xe6e6e8);
+        const exp=!!this.experimental;
+        stack.fillStyle=exp?"#0b1623":"#101216";stack.fillRect(0,0,this.width,this.height);
+        stack.fillStyle=exp?"#123b5b":"#202329";stack.fillRect(0,0,this.width,L.topBar);
+        stack.fillStyle=exp?"#7ddcff":"#e6e6e8";stack.fillRect(0,L.topBar-2,this.width,2);
+        this.drawString(stack,exp?"MCWSE PREVIEW  /  CAMERA STUDIO":"MINEWATCH STUDIO",8,7,exp?0xd8f5ff:0xe6e6e8);
         this.drawString(stack,live?"§cLIVE":"§7OFFLINE",this.width-58,7,live?0xff5555:0xaaaaaa);
 
         if(this.isNonHost()){
