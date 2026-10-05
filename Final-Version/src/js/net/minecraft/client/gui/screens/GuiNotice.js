@@ -17,12 +17,12 @@ export default class GuiNotice extends GuiScreen {
 
         this.mode = "patchnotes";
         this.notice = "Welcome! This deploy adds a new overworld terrain generator, the Backrooms, and a local mod library.";
-        this.title = "Minecraft Websim Edition 1.08 - SirDingus Terrain";
+        this.title = "Minecraft Websim Edition 1.08 - Updated Terrain Generation";
         this.sections = [
             {
                 title: "Terrain Generation",
                 items: [
-                    "New overworld density generator ported from the SirDingus project.",
+                    "Updated terrain generation across the overworld.",
                     "Biome-weighted density shaping and water level.",
                     "The Amplified world type now produces much taller terrain.",
                     "Added worm caves and ravines underground.",
