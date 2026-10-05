@@ -246,6 +246,9 @@ export default class GuiCreateWorld extends GuiScreen {
     }
 
     createWorld() {
+        // Text seeds are normally converted into a numeric hash. Record this
+        // exact phrase before hashing so the Backrooms easter egg survives saves.
+        const isBackroomsSeed = String(this.cachedSeed || "").trim().toLowerCase() === "backrooms";
         let seed = this.cachedSeed;
         if (seed.length === 0) {
             seed = new Random().nextLong();
@@ -260,6 +263,7 @@ export default class GuiCreateWorld extends GuiScreen {
         const worldId = 'w_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
         const world = new World(this.minecraft, seed, worldId, this.gameMode);
         world.name = this.cachedName || "New World";
+        world.isBackroomsSeed = isBackroomsSeed;
         world.worldType = this.worldType;
         if (this.worldType === 1) {
             world.superflatLayers = this.superflatLayers;

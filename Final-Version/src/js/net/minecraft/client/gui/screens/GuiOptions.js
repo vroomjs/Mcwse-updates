@@ -88,10 +88,12 @@ export default class GuiOptions extends GuiScreen {
 
         y += 24;
 
-        // Col 1: Language...
-        this.buttonList.push(new GuiButton("Language...", leftX, y, btnW, 20, () => {
-            // Not implemented
-        }).setEnabled(false));
+        // Col 1: Mods... opens the full-screen local package library.
+        this.buttonList.push(new GuiButton("Mods...", leftX, y, btnW, 20, () => {
+            import("./GuiMods.js").then(module => {
+                this.minecraft.displayScreen(new module.default(this));
+            });
+        }));
 
         // Col 2: Chat Settings...
         this.buttonList.push(new GuiButton("Chat Settings...", rightX, y, btnW, 20, () => {

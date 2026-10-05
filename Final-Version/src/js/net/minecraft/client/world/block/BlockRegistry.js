@@ -1216,6 +1216,37 @@ export class BlockRegistry {
         // Sweet Berry Bush
         BlockRegistry.SWEET_BERRY_BUSH = new BlockSweetBerryBush(574);
 
+        // Backrooms seed assets (user-supplied wallpaper, ceiling lamp, and
+        // blood decal). These IDs are deliberately reserved for the generator.
+        BlockRegistry.BACKROOMS_WALL = new BlockMineral(575, "../../backrooms_walls.png");
+        BlockRegistry.BACKROOMS_WALL.name = "Backrooms Wallpaper";
+        BlockRegistry.BACKROOMS_WALL.sound = Block.sounds.cloth;
+        BlockRegistry.BACKROOMS_LIGHT = new BlockMineral(576, "../../backrooms_lights.png");
+        BlockRegistry.BACKROOMS_LIGHT.name = "Backrooms Fluorescent Light";
+        BlockRegistry.BACKROOMS_LIGHT.lightValue = 15;
+        // This is only swapped in for a few ticks by World.tickBackroomsLights.
+        // Keeping the fixture texture while removing its emitted light makes a
+        // flicker look like a failed fluorescent tube rather than a vanished block.
+        BlockRegistry.BACKROOMS_LIGHT_OFF = new BlockMineral(578, "../../backrooms_lights.png");
+        BlockRegistry.BACKROOMS_LIGHT_OFF.name = "Backrooms Fluorescent Light (Off)";
+        BlockRegistry.BACKROOMS_LIGHT_OFF.sound = Block.sounds.cloth;
+        BlockRegistry.BACKROOMS_BLOOD = new BlockCarpet(577, 0);
+        BlockRegistry.BACKROOMS_BLOOD.name = "Blood Stain";
+        BlockRegistry.BACKROOMS_BLOOD.textureName = "../../backrooms_blood.png";
+        BlockRegistry.BACKROOMS_BLOOD.textureIndex = 0;
+        BlockRegistry.BACKROOMS_BLOOD.cols = 1;
+
+        // Additional Backrooms-only materials turn the seed into a distinct
+        // environment without replacing any normal-world block or texture.
+        BlockRegistry.BACKROOMS_CEILING = new BlockMineral(579, "../../backrooms_ceiling.png");
+        BlockRegistry.BACKROOMS_CEILING.name = "Aged Acoustic Ceiling Tile";
+        BlockRegistry.BACKROOMS_CEILING.sound = Block.sounds.cloth;
+        BlockRegistry.BACKROOMS_CARPET = new BlockCarpet(580, 0);
+        BlockRegistry.BACKROOMS_CARPET.name = "Worn Backrooms Carpet";
+        BlockRegistry.BACKROOMS_CARPET.textureName = "../../backrooms_carpet.png";
+        BlockRegistry.BACKROOMS_CARPET.textureIndex = 0;
+        BlockRegistry.BACKROOMS_CARPET.cols = 1;
+
         // Keep all food behavior driven by one shared table. This also makes
         // food items that are not in the legacy hard-coded lists edible.
         for (const [id, stats] of Object.entries(FOOD_STATS)) {

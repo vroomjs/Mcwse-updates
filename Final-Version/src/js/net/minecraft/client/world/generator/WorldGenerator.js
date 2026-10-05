@@ -1,7 +1,9 @@
 import NoiseGeneratorOctaves from "./noise/NoiseGeneratorOctaves.js";
+import SirDingusTerrain from "./SirDingusTerrain.js";
+import SirDingusUnderground from "./SirDingusUnderground.js";
+import BackroomsGenerator from "./BackroomsGenerator.js";
 import Chunk from "../Chunk.js";
 import Primer from "./Primer.js";
-import CaveGenerator from "./structure/CaveGenerator.js";
 import {BlockRegistry} from "../block/BlockRegistry.js";
 import TreeGenerator from "./structure/TreeGenerator.js";
 import BigTreeGenerator from "./structure/BigTreeGenerator.js";
@@ -36,7 +38,15 @@ export default class WorldGenerator extends Generator {
 
         this.seaLevel = 64;
 
-        this.caveGenerator = new CaveGenerator(world, seed);
+        // Keep every existing population and surface system intact. This object
+        // supplies only the density columns for the supplied terrain generator.
+        this.sirDingusTerrain = new SirDingusTerrain(seed, {
+            amplified: world.worldType === 4
+        });
+        // Worm caves, ravines, and deep lava behavior from the same supplied
+        // generator. Tree/population code below remains this project's own.
+        this.sirDingusUnderground = new SirDingusUnderground(seed);
+        this.backroomsGenerator = new BackroomsGenerator();
 
         this.terrainGenerator4 = new NoiseGeneratorOctaves(this.random, 16);
         this.terrainGenerator5 = new NoiseGeneratorOctaves(this.random, 16);
@@ -103,6 +113,13 @@ export default class WorldGenerator extends Generator {
     }
 
     generateInChunk(chunkX, chunkZ, primer) {
+        // The literal seed "backrooms" is an easter-egg world: its complete
+        // overworld is a lit yellow maze rather than normal terrain.
+        if (this.world.isBackroomsSeed) {
+            this.backroomsGenerator.generateInChunk(chunkX, chunkZ, primer);
+            return;
+        }
+
         if (this.world._gameType === 'oneblock') {
             // One Block: Void world with a single block at 0,64,0
             if (chunkX === 0 && chunkZ === 0) {
@@ -171,12 +188,16 @@ export default class WorldGenerator extends Generator {
             this.naturalize(chunkX, chunkZ, primer);
             this.generateStoneVariants(chunkX, chunkZ, primer);
 
-            this.caveGenerator.generateInChunk(chunkX, chunkZ, primer);
+            this.sirDingusUnderground.generateInChunk(chunkX, chunkZ, primer);
             this.generateOres(chunkX, chunkZ, primer);
         }
     }
 
     populateChunk(chunkX, chunkZ) {
+        // Keep the Backrooms empty: no overworld trees, plants, structures,
+        // or normal population are added to its generated maze.
+        if (this.world.isBackroomsSeed) return;
+
         const GRASS_ID = BlockRegistry.GRASS.getId();
         const SNOWY_GRASS_ID = BlockRegistry.SNOWY_GRASS.getId();
 
@@ -803,130 +824,80 @@ export default class WorldGenerator extends Generator {
 
 
     generateTerrain(chunkX, chunkZ, primer) {
-        let range = 4;
-        let sizeX = range + 1;
-        let sizeZ = 17;
-        let factor = 1 / 4;
+        // Terrain shape is ported from the supplied SirDingus project. The
+        // Existing surface painting, ores, structures, and population paths
+        // run after this method. Underground caves/ravines use the paired
+        // SirDingus feature generator in generateInChunk().
+        const gridSize = 4;
+        const gridHeight = 16;
+        const samplesPerAxis = gridSize + 1;
+        const stone = BlockRegistry.STONE.getId();
+        const water = BlockRegistry.WATER.getId();
+        const bedrock = BlockRegistry.BEDROCK.getId();
 
-        // Generate terrain noise
-        let noise = this.generateTerrainNoise(chunkX * range, 0, chunkZ * range, sizeX, sizeZ, sizeX);
+        // Preserve the target project's Small/Large world borders. They are a
+        // world-size setting, not a part of the terrain-density algorithm.
+        let limitRadius = -1;
+        if (this.world.worldType === 2) limitRadius = 175;
+        if (this.world.worldType === 3) limitRadius = 500;
+        const borderFade = 32;
 
-        // Generate warped biome noise grid for ocean sinking (5x5 grid interpolated)
-        let biomeNoise = [];
-        for (let ix = 0; ix < sizeX; ix++) {
-            for (let iz = 0; iz < sizeX; iz++) {
-                biomeNoise[ix * sizeX + iz] = this.getBiomeNoiseAt((chunkX * 16) + (ix * 4), (chunkZ * 16) + (iz * 4));
+        // The source generator samples density at a 4x8x4 lattice and linearly
+        // interpolates it into a 16x128x16 chunk.
+        const densityColumns = [];
+        for (let gridX = 0; gridX <= gridSize; gridX++) {
+            for (let gridZ = 0; gridZ <= gridSize; gridZ++) {
+                densityColumns.push(this.sirDingusTerrain.column(
+                    chunkX * gridSize + gridX,
+                    chunkZ * gridSize + gridZ
+                ));
             }
         }
 
-        // Define World Limits
-        let limitRadius = -1;
-        if (this.world.worldType === 2) limitRadius = 175; // Small (350x350)
-        if (this.world.worldType === 3) limitRadius = 500; // Large (1000x1000)
-        const fade = 32.0; // Smooth transition area
+        for (let gridX = 0; gridX < gridSize; gridX++) {
+            for (let gridZ = 0; gridZ < gridSize; gridZ++) {
+                const southwest = densityColumns[gridX * samplesPerAxis + gridZ];
+                const southeast = densityColumns[(gridX + 1) * samplesPerAxis + gridZ];
+                const northwest = densityColumns[gridX * samplesPerAxis + gridZ + 1];
+                const northeast = densityColumns[(gridX + 1) * samplesPerAxis + gridZ + 1];
 
-        for (let indexX = 0; indexX < range; indexX++) {
-            for (let indexZ = 0; indexZ < range; indexZ++) {
-                for (let indexY = 0; indexY < 16; indexY++) {
-                    let sec = 1 / 8;
+                for (let gridY = 0; gridY < gridHeight; gridY++) {
+                    for (let localY = 0; localY < 8; localY++) {
+                        const yProgress = localY / 8;
+                        const y = gridY * 8 + localY;
+                        const southAtY = southwest[gridY] + (southwest[gridY + 1] - southwest[gridY]) * yProgress;
+                        const southeastAtY = southeast[gridY] + (southeast[gridY + 1] - southeast[gridY]) * yProgress;
+                        const northAtY = northwest[gridY] + (northwest[gridY + 1] - northwest[gridY]) * yProgress;
+                        const northeastAtY = northeast[gridY] + (northeast[gridY + 1] - northeast[gridY]) * yProgress;
 
-                    // Terrain base noise values
-                    let noise1 = noise[(indexX * sizeX + indexZ) * sizeZ + indexY];
-                    let noise2 = noise[(indexX * sizeX + (indexZ + 1)) * sizeZ + indexY];
+                        for (let localX = 0; localX < 4; localX++) {
+                            const xProgress = localX / 4;
+                            const southDensity = southAtY + (southeastAtY - southAtY) * xProgress;
+                            const northDensity = northAtY + (northeastAtY - northAtY) * xProgress;
+                            const x = gridX * 4 + localX;
+                            const worldX = chunkX * 16 + x;
 
-                    let noise3 = noise[((indexX + 1) * sizeX + indexZ) * sizeZ + indexY];
-                    let noise4 = noise[((indexX + 1) * sizeX + (indexZ + 1)) * sizeZ + indexY];
+                            for (let localZ = 0; localZ < 4; localZ++) {
+                                const zProgress = localZ / 4;
+                                let density = southDensity + (northDensity - southDensity) * zProgress;
+                                const z = gridZ * 4 + localZ;
+                                const worldZ = chunkZ * 16 + z;
 
-                    // Mutation noise values
-                    let mut1 = (noise[(indexX * sizeX + indexZ) * sizeZ + (indexY + 1)] - noise1) * sec;
-                    let mut2 = (noise[(indexX * sizeX + (indexZ + 1)) * sizeZ + (indexY + 1)] - noise2) * sec;
-                    let mut3 = (noise[((indexX + 1) * sizeX + indexZ) * sizeZ + (indexY + 1)] - noise3) * sec;
-                    let mut4 = (noise[((indexX + 1) * sizeX + (indexZ + 1)) * sizeZ + (indexY + 1)] - noise4) * sec;
-
-                    // For each y level of the section
-                    for (let y = 0; y < 8; y++) {
-                        // Take two noise values for the stone to rise
-                        let stoneNoiseAtY1 = noise1;
-                        let stoneNoiseAtY2 = noise2;
-
-                        // Calculate difference of the selected noise values and two other noise values
-                        let diffNoiseY1 = (noise3 - noise1) * factor;
-                        let diffNoiseY2 = (noise4 - noise2) * factor;
-
-                        // For each x and z coordinate of the section
-                        for (let x = 0; x < 4; x++) {
-                            let stoneNoise = stoneNoiseAtY1;
-                            let diffNoiseX = (stoneNoiseAtY2 - stoneNoiseAtY1) * factor;
-
-                            for (let z = 0; z < 4; z++) {
-                                // Calculate real world coordinates
-                                let absX = (chunkX * 16) + (indexX * 4) + x;
-                                let absZ = (chunkZ * 16) + (indexZ * 4) + z;
-                                let absY = indexY * 8 + y;
-
-                                // Interpolate biome noise for smooth ocean transitions
-                                let b1 = biomeNoise[indexX * sizeX + indexZ];
-                                let b2 = biomeNoise[indexX * sizeX + (indexZ + 1)];
-                                let b3 = biomeNoise[(indexX + 1) * sizeX + indexZ];
-                                let b4 = biomeNoise[(indexX + 1) * sizeX + (indexZ + 1)];
-
-                                let bY1 = b1 + (b3 - b1) * (x / 4.0);
-                                let bY2 = b2 + (b4 - b2) * (x / 4.0);
-                                let bVal = bY1 + (bY2 - bY1) * (z / 4.0);
-
-                                // Apply border limit
-                                let densityOffset = 0;
                                 if (limitRadius > 0) {
-                                    const dist = Math.sqrt(absX * absX + absZ * absZ);
-                                    if (dist > limitRadius) {
-                                        densityOffset = -1000; // Force ocean
-                                    } else if (dist > limitRadius - fade) {
-                                        // Linear fade to ocean
-                                        const t = (dist - (limitRadius - fade)) / fade;
-                                        densityOffset = -t * 100;
+                                    const distance = Math.sqrt(worldX * worldX + worldZ * worldZ);
+                                    if (distance > limitRadius) density = -1000;
+                                    else if (distance > limitRadius - borderFade) {
+                                        const fade = (distance - (limitRadius - borderFade)) / borderFade;
+                                        density -= fade * 100;
                                     }
                                 }
 
-                                let typeId = 0;
-
-                                // Set water if y level is below sea level
-                                if (absY < this.seaLevel) {
-                                    typeId = BlockRegistry.WATER.getId();
-                                }
-
-                                // Ocean Sinking: If biome noise is in ocean range, subtract density
-                                let oceanFactor = 0;
-                                if (bVal > 0.45 && bVal < 0.65) {
-                                    // Smoothly interpolate sinking towards center of ocean range
-                                    oceanFactor = 1.0 - Math.abs(bVal - 0.55) / 0.1;
-                                    densityOffset -= oceanFactor * 25.0;
-                                }
-
-                                // Let the terrain rise out of the water
-                                if (stoneNoise + densityOffset > 0.0) {
-                                    typeId = BlockRegistry.STONE.getId();
-                                }
-
-                                // Force bedrock at bottom
-                                if (absY === 0) typeId = BlockRegistry.BEDROCK.getId();
-
-                                //Set target type id
-                                primer.set(indexX * 4 + x, indexY * 8 + y, indexZ * 4 + z, typeId);
-
-                                // Increase noise by noise x difference
-                                stoneNoise += diffNoiseX;
+                                let typeId = y < this.seaLevel ? water : 0;
+                                if (density > 0) typeId = stone;
+                                if (y === 0) typeId = bedrock;
+                                primer.set(x, y, z, typeId);
                             }
-
-                            // Increase noise by noise y differences
-                            stoneNoiseAtY1 += diffNoiseY1;
-                            stoneNoiseAtY2 += diffNoiseY2;
                         }
-
-                        // Mutate noise values
-                        noise1 += mut1;
-                        noise2 += mut2;
-                        noise3 += mut3;
-                        noise4 += mut4;
                     }
                 }
             }

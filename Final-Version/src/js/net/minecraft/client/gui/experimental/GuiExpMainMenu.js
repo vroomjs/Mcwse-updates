@@ -56,7 +56,8 @@ export default class GuiExpMainMenu extends GuiScreen {
                 this.minecraft.displayScreen(new m.default(this, "servers"))),
             "Settings": () => import("./GuiExpSettings.js").then(m =>
                 this.minecraft.displayScreen(new m.default(this))),
-            "Mods": () => ExpRouter.notAvailable(this.minecraft, "Mods"),
+            "Mods": () => import("../screens/GuiMods.js").then(m =>
+                this.minecraft.displayScreen(new m.default(this))),
             "Accessibility": () => ExpRouter.notAvailable(this.minecraft, "Accessibility")
         };
 

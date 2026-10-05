@@ -292,6 +292,10 @@ export default class SoundManager {
         // Music loop state
         this.musicCooldown = 0;
         this.currentTrackName = null;
+        // A procedural fluorescent ballast hum replaces background music in
+        // Backrooms worlds. It uses the user's normal Music volume slider.
+        this.backroomsHum = null;
+        this._backroomsMusicActive = false;
 
         // Add more categories for fallbacks
         SoundManager.SOUND_DATA["mob.creeper.fuse"] = ["https://files.catbox.moe/3df2ok.ogg"];
@@ -402,11 +406,27 @@ export default class SoundManager {
 
     onTick() {
         if (!this.isCreated() || !this.worldRenderer?.minecraft) return;
-        if (this.worldRenderer.minecraft.isPaused()) return;
 
-        const settings = this.worldRenderer.minecraft.settings;
+        const minecraft = this.worldRenderer.minecraft;
+        const world = minecraft.world;
+        const inBackrooms = !!(world && world.isBackroomsSeed && world.dimension === 0);
 
-        // Music loop handler
+        // A Level 0 world deliberately has no music: the persistent, local
+        // fluorescent/ballast hum is the soundtrack instead. It is generated
+        // locally, so it needs no network asset and cannot fail to download.
+        if (inBackrooms) {
+            this._backroomsMusicActive = true;
+            if (!minecraft.isPaused()) this.startBackroomsHum();
+            return;
+        }
+
+        this._backroomsMusicActive = false;
+        this.stopBackroomsHum();
+        if (minecraft.isPaused()) return;
+
+        const settings = minecraft.settings;
+
+        // Normal-world music loop handler
         if (this.bgm && this.bgm.isPlaying) {
             // Song is currently playing
             this.musicCooldown = Math.floor(settings.musicDelay * 60 * 20); // Reset cooldown to the delay period
@@ -449,6 +469,10 @@ export default class SoundManager {
             this.bgm.setVolume(bgmVol);
         }
 
+        // The Backrooms hum belongs to the Music slider because it replaces
+        // regular background music rather than adding another SFX channel.
+        this.updateBackroomsHumVolume();
+
         // Update active sounds in the pool based on their categories
         for (let audio of this.voicePool) {
             if (audio.isPlaying) {
@@ -464,8 +488,143 @@ export default class SoundManager {
         }
     }
 
+    /**
+     * Start a quiet, layered fluorescent electrical hum for Backrooms Level 0.
+     * The oscillators and filtered noise are deliberately subtle and routed
+     * through the existing AudioListener so browser policies and volume
+     * controls behave exactly like the rest of the game audio.
+     */
+    startBackroomsHum() {
+        if (!this.audioListener || this.backroomsHum) {
+            this.updateBackroomsHumVolume();
+            return;
+        }
+
+        const context = this.audioListener.context;
+        if (!context || !this.audioListener.getInput) return;
+        if (context.state === "suspended") context.resume().catch(() => {});
+
+        this.stopBackgroundMusicForBackrooms();
+
+        const master = context.createGain();
+        const toneFilter = context.createBiquadFilter();
+        toneFilter.type = "lowpass";
+        toneFilter.frequency.value = 760;
+        toneFilter.Q.value = 0.65;
+
+        const lowTone = context.createOscillator();
+        lowTone.type = "sine";
+        lowTone.frequency.value = 59.7;
+        const harmonic = context.createOscillator();
+        harmonic.type = "sine";
+        harmonic.frequency.value = 119.4;
+        const harmonicGain = context.createGain();
+        harmonicGain.gain.value = 0.32;
+
+        // Filtered, extremely quiet electrical texture prevents the tone from
+        // feeling like music while giving it an old fluorescent-tube presence.
+        const noiseBuffer = context.createBuffer(1, context.sampleRate * 2, context.sampleRate);
+        const noiseData = noiseBuffer.getChannelData(0);
+        let brown = 0;
+        for (let i = 0; i < noiseData.length; i++) {
+            brown = (brown + (Math.random() * 2 - 1) * 0.035) / 1.035;
+            noiseData[i] = brown;
+        }
+        const noise = context.createBufferSource();
+        noise.buffer = noiseBuffer;
+        noise.loop = true;
+        const noiseFilter = context.createBiquadFilter();
+        noiseFilter.type = "bandpass";
+        noiseFilter.frequency.value = 980;
+        noiseFilter.Q.value = 0.55;
+        const noiseGain = context.createGain();
+        noiseGain.gain.value = 0.034;
+
+        // A barely perceptible amplitude wobble evokes aging ballast instead
+        // of a static drone.
+        const flutter = context.createOscillator();
+        flutter.type = "sine";
+        flutter.frequency.value = 0.16;
+        const flutterDepth = context.createGain();
+        flutterDepth.gain.value = 0.0028;
+
+        lowTone.connect(toneFilter);
+        harmonic.connect(harmonicGain);
+        harmonicGain.connect(toneFilter);
+        noise.connect(noiseFilter);
+        noiseFilter.connect(noiseGain);
+        noiseGain.connect(toneFilter);
+        toneFilter.connect(master);
+        flutter.connect(flutterDepth);
+        flutterDepth.connect(master.gain);
+        master.connect(this.audioListener.getInput());
+
+        master.gain.value = 0.0001;
+        lowTone.start();
+        harmonic.start();
+        noise.start();
+        flutter.start();
+
+        this.backroomsHum = {master, lowTone, harmonic, noise, flutter, toneFilter, noiseFilter, noiseGain, harmonicGain, flutterDepth};
+        this.updateBackroomsHumVolume(true);
+    }
+
+    updateBackroomsHumVolume(fadeIn = false) {
+        if (!this.backroomsHum || !this.audioListener?.context) return;
+        const settings = this.worldRenderer?.minecraft?.settings;
+        const masterVolume = settings?.soundVolume ?? 1.0;
+        const musicVolume = settings?.musicVolume ?? 1.0;
+        const target = 0.040 * masterVolume * musicVolume;
+        const context = this.audioListener.context;
+        const gain = this.backroomsHum.master.gain;
+        const now = context.currentTime;
+        gain.cancelScheduledValues(now);
+        gain.setValueAtTime(Math.max(0.0001, gain.value), now);
+        gain.linearRampToValueAtTime(target, now + (fadeIn ? 0.45 : 0.08));
+    }
+
+    stopBackgroundMusicForBackrooms() {
+        if (!this.bgm || !this.bgm.isPlaying) return;
+        const context = this.audioListener?.context;
+        const gain = this.bgm.gain?.gain;
+        if (context && gain) {
+            const now = context.currentTime;
+            gain.cancelScheduledValues(now);
+            gain.setValueAtTime(Math.max(0.0001, gain.value), now);
+            gain.linearRampToValueAtTime(0.0001, now + 0.12);
+            setTimeout(() => {
+                if (this.bgm?.isPlaying) this.bgm.stop();
+            }, 145);
+        } else {
+            this.bgm.stop();
+        }
+        this.currentTrackName = null;
+    }
+
+    stopBackroomsHum() {
+        const hum = this.backroomsHum;
+        if (!hum || !this.audioListener?.context) return;
+        this.backroomsHum = null;
+
+        const context = this.audioListener.context;
+        const now = context.currentTime;
+        hum.master.gain.cancelScheduledValues(now);
+        hum.master.gain.setValueAtTime(Math.max(0.0001, hum.master.gain.value), now);
+        hum.master.gain.linearRampToValueAtTime(0.0001, now + 0.12);
+        setTimeout(() => {
+            for (const source of [hum.lowTone, hum.harmonic, hum.noise, hum.flutter]) {
+                try { source.stop(); } catch (_) { /* already stopped */ }
+            }
+            for (const node of [hum.lowTone, hum.harmonic, hum.noise, hum.flutter, hum.toneFilter, hum.noiseFilter, hum.noiseGain, hum.harmonicGain, hum.flutterDepth, hum.master]) {
+                try { node.disconnect(); } catch (_) { /* already disconnected */ }
+            }
+        }, 145);
+        // Do not start a normal song the instant a player leaves Level 0.
+        this.musicCooldown = Math.max(this.musicCooldown, 80);
+    }
+
     playBackgroundMusic(path, volume) {
-        if (!this.audioListener) return;
+        if (this._backroomsMusicActive || !this.audioListener) return;
         // If BGM is already playing, don't interrupt it.
         if (this.bgm && this.bgm.isPlaying) return;
 
@@ -475,8 +634,9 @@ export default class SoundManager {
         }
 
         this.audioLoader.load(path, (buffer) => {
-            // Re-check playing state after async load
-            if (this.bgm.isPlaying) return;
+            // Do not let a normal track that was loading during a dimension
+            // transition start over the Backrooms hum.
+            if (this._backroomsMusicActive || this.bgm.isPlaying) return;
 
             this.bgm.setBuffer(buffer);
             this.bgm.setLoop(false); // Music should play once then cooldown
@@ -651,6 +811,7 @@ export default class SoundManager {
     }
 
     stopAllSounds() {
+        this.stopBackroomsHum();
         if (!this.voicePool) return;
         for (let audio of this.voicePool) {
             this.stopSound(audio, 0.05);

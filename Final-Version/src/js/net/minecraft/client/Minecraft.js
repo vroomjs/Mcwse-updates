@@ -325,6 +325,9 @@ export default class Minecraft {
     }
 
     loadWorld(world, loadingTitle = "Generating terrain...") {
+        // Hide an old Backrooms treatment during every world transition. It is
+        // enabled again only after the incoming world's persisted data is read.
+        this.setBackroomsVhsOverlay(false);
         if (this.world && this.world.lightValidator) {
             clearInterval(this.world.lightValidator);
         }
@@ -495,6 +498,8 @@ export default class Minecraft {
             }
         }
 
+        this.setBackroomsVhsOverlay(!!(this.world && this.world.isBackroomsSeed && this.world.dimension === 0));
+
         // Give Starting Map if enabled
         if (this.world && this.world._startingMap) {
                 if (this.player && this.player.inventory) {
@@ -503,6 +508,63 @@ export default class Minecraft {
                 this.player.inventory.addItem(358, 1);
             }
         }
+    }
+
+    /** Toggle the non-interactive VHS layer for a Backrooms overworld only. */
+    setBackroomsVhsOverlay(active) {
+        if (typeof document === "undefined") return;
+        const overlay = document.getElementById("backrooms-vhs-overlay");
+        if (!overlay) return;
+
+        const enabled = !!active;
+        overlay.classList.toggle("active", enabled);
+        document.body?.classList.toggle("backrooms-vhs-active", enabled);
+
+        if (enabled) {
+            if (!this._backroomsBodycamStartedAt) this._backroomsBodycamStartedAt = Date.now();
+            this.updateBackroomsBodycamReadout();
+            if (!this._backroomsBodycamTimer) {
+                this._backroomsBodycamTimer = setInterval(() => this.updateBackroomsBodycamReadout(), 1000);
+            }
+        } else {
+            overlay.classList.remove("flicker");
+            if (this._backroomsVhsFlickerTimer) {
+                clearTimeout(this._backroomsVhsFlickerTimer);
+                this._backroomsVhsFlickerTimer = null;
+            }
+            if (this._backroomsBodycamTimer) {
+                clearInterval(this._backroomsBodycamTimer);
+                this._backroomsBodycamTimer = null;
+            }
+            this._backroomsBodycamStartedAt = 0;
+            const readout = document.getElementById("backrooms-bodycam-time");
+            if (readout) readout.textContent = "00:00:00";
+        }
+    }
+
+    updateBackroomsBodycamReadout() {
+        if (typeof document === "undefined" || !this._backroomsBodycamStartedAt) return;
+        const readout = document.getElementById("backrooms-bodycam-time");
+        if (!readout) return;
+        const elapsed = Math.max(0, Math.floor((Date.now() - this._backroomsBodycamStartedAt) / 1000));
+        const hours = String(Math.floor(elapsed / 3600)).padStart(2, "0");
+        const minutes = String(Math.floor((elapsed % 3600) / 60)).padStart(2, "0");
+        const seconds = String(elapsed % 60).padStart(2, "0");
+        readout.textContent = `${hours}:${minutes}:${seconds}`;
+    }
+
+    /** Briefly intensify the VHS noise in sync with a fluorescent outage. */
+    triggerBackroomsVhsFlicker(durationMs = 150) {
+        if (typeof document === "undefined") return;
+        const overlay = document.getElementById("backrooms-vhs-overlay");
+        if (!overlay || !overlay.classList.contains("active")) return;
+
+        overlay.classList.add("flicker");
+        if (this._backroomsVhsFlickerTimer) clearTimeout(this._backroomsVhsFlickerTimer);
+        this._backroomsVhsFlickerTimer = setTimeout(() => {
+            overlay.classList.remove("flicker");
+            this._backroomsVhsFlickerTimer = null;
+        }, Math.max(50, durationMs));
     }
 
     switchDimension(targetDimId = null) {
@@ -553,6 +615,7 @@ export default class Minecraft {
             // Switch world instance
             this.worldRenderer.reset(); // Clear old meshes
             this.world = targetWorld;
+            this.setBackroomsVhsOverlay(!!(this.world.isBackroomsSeed && this.world.dimension === 0));
             this.worldRenderer.scene.add(this.world.group);
             
             // Transfer player
@@ -1470,7 +1533,7 @@ export default class Minecraft {
     isWorldMalformed() {
         if (!this.world || !this.world.generator) return false;
         // Don't check special world types that are allowed to be "empty"
-        if (this.world._gameType === 'skyblock' || this.world._gameType === 'oneblock' || this.world.worldType === 1 || this.world.worldType === 6) return false;
+        if (this.world._gameType === 'skyblock' || this.world._gameType === 'oneblock' || this.world.isBackroomsSeed || this.world.worldType === 1 || this.world.worldType === 6) return false;
         // Only check Overworld
         if (this.world.dimension !== 0) return false;
 

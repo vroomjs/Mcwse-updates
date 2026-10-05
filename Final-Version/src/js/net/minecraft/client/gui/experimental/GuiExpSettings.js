@@ -205,7 +205,8 @@ export default class GuiExpSettings extends GuiScreen {
             ];
             case "Resource Packs": return [this.action("Open Resource Packs...", open("GuiResourcePacks.js"))];
             case "Language": return [this.action("Language", () => ExpRouter.notAvailable(mc, "Language selection"))];
-            case "Mods": return [this.action("Mods", () => ExpRouter.notAvailable(mc, "Mods"))];
+            case "Mods": return [this.action("Open Mods Library...", () =>
+                import("../screens/GuiMods.js").then(m => mc.displayScreen(new m.default(this))))];
             default: return [];
         }
     }

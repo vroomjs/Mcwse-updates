@@ -71,6 +71,12 @@ class Start {
             "../../blocks.png",
             "../../minecraftwebsimedition.png",
             "../../random stuff.png"
+,
+            "../../backrooms_walls.png",
+            "../../backrooms_lights.png",
+            "../../backrooms_blood.png",
+            "../../backrooms_carpet.png",
+            "../../backrooms_ceiling.png"
         ];
 
         // Game textures loaded in background

@@ -2,6 +2,7 @@ import Chunk from "./Chunk.js";
 import ChunkSection from "./ChunkSection.js";
 import WorldGenerator from "./generator/WorldGenerator.js";
 import WorldGeneratorV2 from "./generator/WorldGeneratorV2.js";
+import {BACKROOMS_SPAWN} from "./generator/BackroomsGenerator.js";
 import MathHelper from "../../util/MathHelper.js";
 import BoundingBox from "../../util/BoundingBox.js";
 import EnumSkyBlock from "../../util/EnumSkyBlock.js";
@@ -92,6 +93,13 @@ export default class World {
         
         this.name = "World";
         this.worldType = 0; // 0: Default, 1: Flat, 2: Small, 3: Large, 6: Debug
+        // Set by the create-world screen only for the literal seed "backrooms".
+        // It is persisted as a flag because normal text seeds are hashed.
+        this.isBackroomsSeed = false;
+        // Short-lived cosmetic lamp state. It is intentionally not serialized:
+        // a game saved mid-flicker still reloads with normal ceiling lights.
+        this.backroomsFlickeringLights = new Map();
+        this.nextBackroomsFlickerTick = 0;
         this.savedData = null;
         this.worldId = worldId;
         this.isMultiplayer = false;
@@ -602,10 +610,84 @@ export default class World {
             }
         }
 
+        // Backrooms fixtures are sparse and bounded: at most one nearby
+        // fluorescent tube is toggled at a time, never every loaded lamp.
+        this.tickBackroomsLights();
+
         // Random display ticks for particles (Torches, etc)
         if (this.minecraft.player && this.time % 2 === 0) {
             this.randomDisplayTick();
         }
+    }
+
+    /**
+     * Creates a low-cost fluorescent flicker in Backrooms overworld rooms.
+     * Only loaded nearby chunks are sampled, and a temporary unlit fixture is
+     * restored after 2-6 ticks. This keeps light-engine/mesh work bounded and
+     * lets the actual block lighting visibly dip instead of faking it in UI.
+     */
+    tickBackroomsLights() {
+        if (!this.isBackroomsSeed || this.dimension !== 0) return;
+
+        const litFixture = BlockRegistry.BACKROOMS_LIGHT;
+        const unlitFixture = BlockRegistry.BACKROOMS_LIGHT_OFF;
+        if (!litFixture || !unlitFixture) return;
+
+        const litId = litFixture.getId();
+        const unlitId = unlitFixture.getId();
+
+        // Restore any lamps whose tiny off interval has elapsed. Do not undo a
+        // player/admin change made during the flicker.
+        for (const [key, flicker] of this.backroomsFlickeringLights) {
+            if (this.time < flicker.restoreAt) continue;
+            if (this.chunkExists(flicker.x >> 4, flicker.z >> 4) &&
+                this.getBlockAt(flicker.x, flicker.y, flicker.z) === unlitId) {
+                this.setBlockAt(flicker.x, flicker.y, flicker.z, litId);
+            }
+            this.backroomsFlickeringLights.delete(key);
+        }
+
+        if (this.time < this.nextBackroomsFlickerTick || this.backroomsFlickeringLights.size !== 0) return;
+        // About one brief interruption every 0.8-2.8 seconds, but only when a
+        // suitable generated fixture is actually close enough to the player.
+        this.nextBackroomsFlickerTick = this.time + 16 + Math.floor(Math.random() * 41);
+
+        const player = this.minecraft.player;
+        if (!player) return;
+        const playerChunkX = Math.floor(player.x) >> 4;
+        const playerChunkZ = Math.floor(player.z) >> 4;
+        const ceilingY = 56; // BackroomsGenerator.CEILING_Y
+        const lampCoordinates = [3, 4, 7, 11];
+        const candidates = [];
+
+        // All Backrooms lamp layouts use this small set of local coordinates.
+        // Sampling them in a 5x5 loaded-chunk area is predictable and much
+        // cheaper than scanning the whole world or all loaded block sections.
+        for (const chunk of this.chunks.values()) {
+            if (!chunk.loaded ||
+                Math.abs(chunk.x - playerChunkX) > 2 ||
+                Math.abs(chunk.z - playerChunkZ) > 2) continue;
+            for (const localX of lampCoordinates) {
+                for (const localZ of lampCoordinates) {
+                    const x = (chunk.x << 4) + localX;
+                    const z = (chunk.z << 4) + localZ;
+                    if (this.getBlockAt(x, ceilingY, z) === litId) {
+                        candidates.push({x, y: ceilingY, z});
+                    }
+                }
+            }
+        }
+
+        if (candidates.length === 0) return;
+        const chosen = candidates[Math.floor(Math.random() * candidates.length)];
+        const key = chosen.x + "," + chosen.y + "," + chosen.z;
+        const duration = 2 + Math.floor(Math.random() * 5);
+
+        // setBlockAt deliberately drives light propagation and a localized
+        // section rebuild. It runs once per flicker, rather than per lamp/tick.
+        this.setBlockAt(chosen.x, chosen.y, chosen.z, unlitId);
+        this.backroomsFlickeringLights.set(key, {...chosen, restoreAt: this.time + duration});
+        this.minecraft.triggerBackroomsVhsFlicker?.(duration * 50);
     }
 
     randomDisplayTick() {
@@ -1629,6 +1711,12 @@ export default class World {
     }
 
     getSkyColor(x, z, partialTicks) {
+        // The Backrooms has no outdoor sky. Renderer fog uses this muted
+        // fluorescent cast for any gaps or long sight lines under its roof.
+        if (this.isBackroomsSeed && this.dimension === 0) {
+            return new Vector3(0.39, 0.36, 0.20);
+        }
+
         let angle = this.getCelestialAngle(partialTicks);
         let brightness = Math.cos(angle * 3.141593 * 2.0) * 2.0 + 0.5;
 
@@ -1654,6 +1742,12 @@ export default class World {
     }
 
     getFogColor(partialTicks) {
+        // A smoky yellow-green haze is used only by the Backrooms renderer
+        // path; normal worlds retain the existing time-of-day fog.
+        if (this.isBackroomsSeed && this.dimension === 0) {
+            return new Vector3(0.31, 0.30, 0.17);
+        }
+
         let angle = this.getCelestialAngle(partialTicks);
         let rotation = Math.cos(angle * Math.PI * 2.0) * 2.0 + 0.5;
         rotation = MathHelper.clamp(rotation, 0.0, 1.0);
@@ -1804,6 +1898,14 @@ export default class World {
     }
 
     findSpawn() {
+        if (this.isBackroomsSeed && this.dimension === 0) {
+            this.spawn.x = BACKROOMS_SPAWN.x;
+            this.spawn.y = BACKROOMS_SPAWN.y;
+            this.spawn.z = BACKROOMS_SPAWN.z;
+            this.spawnIsSet = true;
+            return;
+        }
+
         if (this.worldType === 1 || this.worldType === 6) { // Flat / Debug
             this.spawn.x = 0;
             this.spawn.z = 0;
@@ -1911,6 +2013,10 @@ export default class World {
         }
         this.chunkLoadQueue.sort((a, b) => b.d - a.d);
 
+        // The Backrooms have a roof. Its intentional interior spawn must not
+        // be moved on top of that roof by the normal surface-spawn logic.
+        if (this.isBackroomsSeed && this.dimension === 0) return;
+
         // Place spawn at the topmost solid block for this column (so spawn is not buried)
         let preferredY = this.getHighestBlockAt(this.spawn.x, this.spawn.z) + 1;
 
@@ -1932,6 +2038,10 @@ export default class World {
 
             if (data.gm !== undefined) {
                 this.gameMode = data.gm;
+            }
+
+            if (data.br !== undefined) {
+                this.isBackroomsSeed = !!data.br;
             }
 
             if (data.gr) {
@@ -2140,7 +2250,8 @@ export default class World {
                         pd: this.playerData, // Save remote player data
                         lp: Date.now(),
                         bonusChest: this._bonusChest,
-                        sb: this.spawnBiome
+                        sb: this.spawnBiome,
+                        br: this.isBackroomsSeed
                     };
 
                     // Update local cache of saved data

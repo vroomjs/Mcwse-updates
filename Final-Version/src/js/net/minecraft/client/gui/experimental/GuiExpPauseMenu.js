@@ -108,7 +108,8 @@ export default class GuiExpPauseMenu extends GuiScreen {
             ["Statistics", () => this.openScreen("GuiStats.js")],
             [hosting ? "Manage LAN" : "Open to LAN", () => this.openLan()],
             ["Camera Studio", () => this.openScreen("GuiCameraStudio.js")],
-            ["Mods", () => ExpRouter.notAvailable(mc, "Mods")],
+            ["Mods", () => import("../screens/GuiMods.js").then(m =>
+                mc.displayScreen(new m.default(this)))],
             ["Settings", () => import("./GuiExpSettings.js").then(m =>
                 mc.displayScreen(new m.default(this)))]
         ];

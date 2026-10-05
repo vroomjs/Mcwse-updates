@@ -2029,6 +2029,25 @@ export default class WorldRenderer {
         } else {
             let world = this.minecraft.world;
 
+            // Level 0 is an enclosed, electrically-lit office maze rather
+            // than an outdoor biome. Short warm fog, no sky, and a tiny
+            // brightness dip while a fixture is out give it its own visual
+            // identity without changing normal-world rendering.
+            if (world.isBackroomsSeed && world.dimension === 0) {
+                const fixtureOut = world.backroomsFlickeringLights?.size > 0;
+                const pulse = fixtureOut ? 0.68 : 0.92 + Math.sin(world.time * 0.075) * 0.025;
+                const color = new THREE.Color(0.46 * pulse, 0.43 * pulse, 0.24 * pulse);
+                const far = Math.max(24, Math.min(52, this.minecraft.settings.viewDistance * ChunkSection.SIZE * 1.5));
+
+                this.background.background = color;
+                this.scene.fog = new THREE.Fog(color, 5, far);
+                // The solid Backrooms roof hides the sky geometry naturally.
+                // Leave its visibility state alone so switching back to an
+                // ordinary world immediately restores its normal sky cycle.
+                this.background.fog = this.scene.fog;
+                return;
+            }
+
             const normalViewDistance=this.minecraft.settings.viewDistance;
             const farViewChunks=this.minecraft.settings.lodRendering===false?normalViewDistance:Math.max(normalViewDistance,Math.ceil((this.minecraft.settings.lodRenderDistance||64)/16));
             let viewDistance = farViewChunks * ChunkSection.SIZE;

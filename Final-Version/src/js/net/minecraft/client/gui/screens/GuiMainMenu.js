@@ -74,10 +74,16 @@ export default class GuiMainMenu extends GuiScreen {
             });
         }));
         
-        this.buttonList.push(new GuiButton("Options...", this.width / 2 - 100, y + rowH * 5, 98, 20, () => {
+        this.buttonList.push(new GuiButton("Mods", this.width / 2 - 100, y + rowH * 5, 200, 20, () => {
+            import("./GuiMods.js").then(module => {
+                this.minecraft.displayScreen(new module.default(this));
+            });
+        }));
+
+        this.buttonList.push(new GuiButton("Options...", this.width / 2 - 100, y + rowH * 6, 98, 20, () => {
             this.minecraft.displayScreen(new GuiOptions(this));
         }));
-        this.buttonList.push(new GuiButton("Exit", this.width / 2 + 2, y + rowH * 5, 98, 20, () => {
+        this.buttonList.push(new GuiButton("Exit", this.width / 2 + 2, y + rowH * 6, 98, 20, () => {
             this.minecraft.displayScreen(new GuiWhiteScreen());
         }));
 
