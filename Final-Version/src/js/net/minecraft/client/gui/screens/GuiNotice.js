@@ -16,44 +16,46 @@ export default class GuiNotice extends GuiScreen {
         }
 
         this.mode = "patchnotes";
-        this.notice = "Welcome! This deploy adds reliable multiplayer world rejoining and expanded broadcast camera controls.";
-        this.title = "Minecraft Websim Edition 1.07 - Deploy 7.2";
+        this.notice = "Welcome! This deploy adds a new overworld terrain generator, the Backrooms, and a local mod library.";
+        this.title = "Minecraft Websim Edition 1.08 - SirDingus Terrain";
         this.sections = [
             {
-                title: "Multiplayer World Sync",
+                title: "Terrain Generation",
                 items: [
-                    "Host-authoritative multiplayer world state.",
-                    "Placed blocks remain visible after clients rejoin.",
-                    "Broken blocks persist as explicit air entries.",
-                    "World diffs apply after terrain generation.",
-                    "Persistent player UUIDs survive PeerJS reconnects.",
-                    "Host restores player position, inventory, armor, and gamemode.",
-                    "Single-player saves and client preferences remain separate."
+                    "New overworld density generator ported from the SirDingus project.",
+                    "Biome-weighted density shaping and water level.",
+                    "The Amplified world type now produces much taller terrain.",
+                    "Added worm caves and ravines underground.",
+                    "Reworked deep lava fill at low levels.",
+                    "Surface painting, ores, structures, and trees are unchanged."
                 ]
             },
             {
-                title: "Broadcast Cameras",
+                title: "The Backrooms",
                 items: [
-                    "Added Static, Chase, Player POV, and Cameraman sources.",
-                    "Chase cameras keep the target player in frame.",
-                    "Chase camera distance, height, smoothness, FOV, yaw, pitch, and roll are editable.",
-                    "Camera properties support experimental buttons and sliders.",
-                    "Camera placement includes a live bottom-right camera preview.",
-                    "Placement preview is removed after placing or cancelling."
+                    "Create a world with the seed \"backrooms\" to enter Level 0.",
+                    "An endless, procedurally generated room maze.",
+                    "Rooms include open halls, water, maintenance, stairwells, and generators.",
+                    "Added Backrooms wall, carpet, ceiling, light, and blood textures.",
+                    "Music is replaced by a locally generated fluorescent ballast hum.",
+                    "The hum follows your normal Music volume slider.",
+                    "Backrooms worlds skip overworld trees, plants, and structures.",
+                    "The backrooms seed survives saving and reloading a world."
                 ]
             },
             {
-                title: "Interface & Reliability",
+                title: "Mods & Interface",
                 items: [
-                    "Improved camera source and properties interfaces.",
-                    "Added experimental Camera Studio and Camera Settings entry points.",
-                    "Fixed camera property text fields and slider labels.",
-                    "Preserved existing PeerJS multiplayer and broadcast behavior.",
-                    "Kept camera IDs and existing static camera compatibility."
+                    "Added a full-screen Mods library, opened from Options.",
+                    "Browse and search local ZIP packages.",
+                    "Apply & Reload activates pending package changes.",
+                    "Packages load when the game starts.",
+                    "Updated the main menu, pause menu, and settings screens.",
+                    "Updated the world creation and options screens."
                 ]
             }
         ];
-        this.footer = "Deploy 7.2: Host a LAN world to test authoritative rejoining and open Camera Studio to test the camera placement preview.";
+        this.footer = "Deploy 7.2 Terrain: create a world seeded \"backrooms\" to find Level 0, or pick the Amplified world type to test the new shaping.";
     }
 
     init() {
