@@ -1,0 +1,144 @@
+body, html {
+    margin: 0;
+    overflow: hidden;
+    width: 100%;
+    height: 100%;
+    background-color: #000; /* Set a black background to prevent white flashes */
+}
+
+canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    image-rendering: -moz-crisp-edges; /* Firefox */
+    image-rendering: -webkit-crisp-edges; /* Webkit (Safari) */
+    image-rendering: pixelated; /* Chrome */
+}
+
+#background {
+    background-image: url(src/resources/gui/background.png);
+    background-repeat: no-repeat;
+    background-size: contain;
+    background-position: center;
+    image-rendering: -moz-crisp-edges; /* Firefox */
+    image-rendering: -webkit-crisp-edges; /* Webkit (Safari) */
+    image-rendering: pixelated; /* Chrome */
+}
+
+.fullscreen {
+    position: absolute;
+    top: 0;
+    left: 0;
+    display: block;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+}
+
+#canvas-container {
+    touch-action: none;
+}
+
+/* Mobile UI Styles */
+.mobile-ui {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 1000;
+    user-select: none;
+}
+
+.mobile-ui.visible {
+    display: block;
+}
+
+.mc-mobile-btn {
+    pointer-events: auto;
+    background: rgba(128, 128, 128, 0.35);
+    border: 3px solid rgba(0, 0, 0, 0.4);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: sans-serif;
+    font-weight: bold;
+    font-size: 20px;
+    border-radius: 2px;
+    box-shadow: inset -2px -2px 0 rgba(0,0,0,0.4), inset 2px 2px 0 rgba(255,255,255,0.2);
+    transition: background 0.05s;
+    image-rendering: pixelated;
+}
+
+.mc-mobile-btn:active {
+    background: rgba(180, 180, 180, 0.6);
+    border-color: rgba(255, 255, 255, 0.4);
+    box-shadow: inset 2px 2px 0 rgba(0,0,0,0.4), inset -2px -2px 0 rgba(255,255,255,0.2);
+}
+
+.top-bar {
+    position: absolute;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 8px;
+}
+
+.icon-btn {
+    width: 36px;
+    height: 36px;
+}
+
+.d-pad {
+    position: absolute;
+    bottom: 15px;
+    left: 15px;
+    width: 150px;
+    height: 150px;
+    display: grid;
+    grid-template-areas: 
+        ". up ."
+        "left sneak right"
+        ". down .";
+    grid-template-columns: repeat(3, 50px);
+    grid-template-rows: repeat(3, 50px);
+}
+
+.d-btn { width: 50px; height: 50px; }
+.up { grid-area: up; background-image: url('src/resources/gui/icons.png'); background-position: -2px -2px; background-size: 300px; } /* Using placeholder offsets or icons */
+.up::after { content: '▲'; }
+.left { grid-area: left; }
+.left::after { content: '◀'; }
+.center { grid-area: sneak; font-size: 14px; }
+.center::after { content: '◆'; }
+.right { grid-area: right; }
+.right::after { content: '▶'; }
+.down { grid-area: down; }
+.down::after { content: '▼'; }
+
+.action-pad {
+    position: absolute;
+    bottom: 15px;
+    right: 15px;
+    width: 60px;
+    height: 160px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.a-btn {
+    width: 60px;
+    height: 60px;
+}
+
+.jump { background: rgba(128, 128, 128, 0.5); }
+.jump::after { content: '▲'; font-size: 24px; }
+.sprint::after { content: '●'; }
+.place::after { content: '▼'; }
+.sprint { background: rgba(128, 128, 128, 0.35); font-size: 12px; }
+.place { background: rgba(128, 128, 128, 0.35); }

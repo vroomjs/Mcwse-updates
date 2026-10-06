@@ -1,0 +1,208 @@
+ <html lang="en">
+<head>
+    <title>Minecraft Websim Edition</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
+    <link rel="icon" type="image/png" href="projectlogo.png">
+    <link rel="shortcut icon" type="image/png" href="projectlogo.png">
+    <link rel="apple-touch-icon" href="projectlogo.png">
+    <link rel="stylesheet" href="style.css"/>
+    <link rel="manifest" href="manifest.json">
+</head>
+
+<body>
+
+<div id="intro-overlay" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 9999; background: black; display: flex; align-items: center; justify-content: center; pointer-events: all;">
+    <video id="intro-video" src="skyboxintro.mp4" style="width: 100%; height: 100%; object-fit: cover;" playsinline muted autoplay preload="auto"></video>
+</div>
+
+<div id="content" class="fullscreen">
+    <div id="canvas-container" class="fullscreen"></div>
+</div>
+
+<div id="mobile-overlay" class="mobile-ui">
+    <!-- Top Center Controls -->
+    <div class="top-bar">
+        <div id="btn-inventory" class="mc-mobile-btn icon-btn world-exclude"><img src="takinginventory.png" style="width:70%; height:70%; object-fit:contain; pointer-events: none;"></div>
+        <div id="btn-chat" class="mc-mobile-btn icon-btn world-exclude"><img src="src/resources/gui/icons.png" style="width:70%; height:70%; object-fit:contain; filter: invert(1); pointer-events: none; display: none;"></div>
+        <div id="btn-pause" class="mc-mobile-btn icon-btn world-exclude"><span style="pointer-events: none;">||</span></div>
+    </div>
+
+    <!-- Directional Pad -->
+    <div class="d-pad">
+        <div id="btn-up" class="mc-mobile-btn d-btn up world-exclude" data-key="KeyW"></div>
+        <div id="btn-left" class="mc-mobile-btn d-btn left world-exclude" data-key="KeyA"></div>
+        <div id="btn-sneak" class="mc-mobile-btn d-btn center world-exclude" data-key="ShiftLeft">S</div>
+        <div id="btn-right" class="mc-mobile-btn d-btn right world-exclude" data-key="KeyD"></div>
+        <div id="btn-down" class="mc-mobile-btn d-btn down world-exclude" data-key="KeyS"></div>
+    </div>
+
+    <!-- Action Pad -->
+    <div class="action-pad">
+        <div id="btn-jump" class="mc-mobile-btn a-btn jump world-exclude" data-key="Space"></div>
+        <div id="btn-sprint" class="mc-mobile-btn a-btn sprint world-exclude" data-key="ControlLeft"></div>
+        <div id="btn-place" class="mc-mobile-btn a-btn place world-exclude"></div>
+    </div>
+</div>
+
+<style>
+    /* Styling for the One Block HUD container */
+    #one-block-hud {
+        position: fixed;
+        top: 8px;
+        right: 8px;
+        background: rgba(0, 0, 0, 0.6);
+        border: 2px solid #373737;
+        padding: 6px 10px;
+        border-radius: 2px;
+        color: white;
+        font-family: 'Minecraft', sans-serif;
+        font-size: 14px;
+        z-index: 10000;
+        display: none;
+        pointer-events: none;
+        text-align: right;
+    }
+    #one-block-hud .phase { color: #FFFF55; font-weight: bold; margin-bottom: 2px; }
+    #one-block-hud .mined { color: #AAAAAA; font-size: 11px; }
+</style>
+
+<div id="one-block-hud">
+    <div id="ob-phase" class="phase">Phase: Plains</div>
+    <div id="ob-mined" class="mined">Blocks Mined: 0</div>
+</div>
+
+<div id="perf-overlay" style="position: fixed; bottom: 2px; right: 2px; color: rgba(255,255,255,0.4); font-family: monospace; font-size: 9px; z-index: 10001; pointer-events: none; background: rgba(0,0,0,0.2); padding: 2px;"></div>
+
+<style>
+    /* Add a style for the beveled button look used in mini-buttons */
+    .mc-mini-button {
+        image-rendering: pixelated;
+        border: 2px solid #000;
+    }
+</style>
+
+</body>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://esm.sh/three@0.150.0",
+    "three/addons/": "https://esm.sh/three@0.150.0/examples/jsm/",
+    "nipplejs": "https://esm.sh/nipplejs",
+    "peerjs": "https://esm.sh/peerjs@1.5.2",
+    "jszip": "https://esm.sh/jszip@3.10.1"
+  }
+}
+</script>
+<script type="module" src="src/js/Start.js"></script>
+
+<script>
+  // Ensure projectlogo.png is the definitive app logo and favicon
+  (function forceFavicon() {
+    const head = document.head;
+    
+    // Remove any existing icons to avoid conflicts
+    head.querySelectorAll("link[rel*='icon']").forEach(el => el.remove());
+    
+    // Create new primary favicon
+    const link = document.createElement('link');
+    link.type = 'image/png';
+    link.rel = 'icon';
+    link.href = 'projectlogo.png';
+    head.appendChild(link);
+    
+    // Create shortcut icon for older browsers
+    const shortcut = document.createElement('link');
+    shortcut.rel = 'shortcut icon';
+    shortcut.href = 'projectlogo.png';
+    head.appendChild(shortcut);
+    
+    // Set apple-touch-icon for mobile app-like logo support
+    const appleLink = document.querySelector("link[rel='apple-touch-icon']") || document.createElement('link');
+    appleLink.rel = 'apple-touch-icon';
+    appleLink.href = 'projectlogo.png';
+    head.appendChild(appleLink);
+  })();
+
+  // Force a resize on load so rendering systems that only initialize on resize
+  // (e.g. the main menu panorama) start immediately. Also send a second resize
+  // shortly after to catch race conditions.
+  (function ensurePanoramaInit() {
+    function triggerResize() {
+      try {
+        window.dispatchEvent(new Event('resize'));
+      } catch (e) {
+        // fallback for older browsers
+        var evt = document.createEvent('UIEvents');
+        evt.initUIEvent('resize', true, false, window, 0);
+        window.dispatchEvent(evt);
+      }
+    }
+
+    if (document.readyState === 'complete') {
+      triggerResize();
+      setTimeout(triggerResize, 120);
+    } else {
+      window.addEventListener('load', function onload() {
+        window.removeEventListener('load', onload);
+        triggerResize();
+        setTimeout(triggerResize, 120);
+      });
+    }
+  })();
+
+  // Intro Video Controller
+  (function initIntro() {
+    const overlay = document.getElementById('intro-overlay');
+    const video = document.getElementById('intro-video');
+    let finished = false;
+
+    const finishIntro = () => {
+        if (finished) return;
+        finished = true;
+        overlay.style.transition = 'opacity 0.8s ease-out';
+        overlay.style.opacity = '0';
+        overlay.style.pointerEvents = 'none';
+        setTimeout(() => overlay.remove(), 850);
+    };
+
+    video.addEventListener('ended', finishIntro);
+    video.addEventListener('error', finishIntro);
+    overlay.addEventListener('click', finishIntro); // Allow skipping
+
+    // Attempt autoplay
+    video.play().catch(() => {
+        // If blocked by browser, wait for first interaction
+        const startOnInteraction = () => {
+            video.play();
+            window.removeEventListener('mousedown', startOnInteraction);
+            window.removeEventListener('touchstart', startOnInteraction);
+        };
+        window.addEventListener('mousedown', startOnInteraction);
+        window.addEventListener('touchstart', startOnInteraction);
+    });
+  })();
+
+  // PWA Service Worker Registration
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('./sw.js', { scope: './' }).then(reg => {
+        console.log('SW registered:', reg);
+        
+        // Check for updates
+        reg.onupdatefound = () => {
+          const installingWorker = reg.installing;
+          installingWorker.onstatechange = () => {
+            if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
+              console.log('New version available! Refresh to update.');
+            }
+          };
+        };
+      }).catch(err => {
+        console.error('SW registration failed:', err);
+      });
+    });
+  }
+</script>
+
+</html>

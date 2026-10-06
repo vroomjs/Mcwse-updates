@@ -1,0 +1,9 @@
+export default class VoiceChat {
+ constructor(mc){this.minecraft=mc;this.enabled=false;this.stream=null;this.calls=new Map();this.audio=new Map();this.ptt=false;this.muted=false;this.maxDistance=48;}
+ async enable(){if(this.enabled)return true;try{this.stream=await navigator.mediaDevices.getUserMedia({audio:true,video:false});this.enabled=true;this.minecraft.addMessageToChat('§aVoice chat enabled.');this.answerCalls();return true;}catch(e){this.minecraft.addMessageToChat('§cMicrophone permission was denied.');return false;}}
+ disable(){this.enabled=false;this.stream?.getTracks().forEach(t=>t.stop());this.stream=null;for(const c of this.calls.values())c.close();this.calls.clear();for(const a of this.audio.values())a.remove();this.audio.clear();}
+ answerCalls(){const p=this.minecraft.multiplayer?.peer;if(!p||p._voiceBound)return;p._voiceBound=true;p.on('call',call=>{if(!this.enabled)return;call.answer(this.stream);call.on('stream',stream=>this.attach(call.peer,stream));});}
+ tick(){if(!this.enabled)return;this.answerCalls();const peer=this.minecraft.multiplayer?.peer;if(!peer?.call||!this.stream)return;for(const id of this.minecraft.multiplayer?.remotePlayers?.keys?.()||[]){if(this.calls.has(id))continue;try{const c=peer.call(id,this.stream);this.calls.set(id,c);c.on('stream',s=>this.attach(id,s));c.on('close',()=>this.calls.delete(id));}catch(_){} }for(const [id,a] of this.audio){const e=this.minecraft.multiplayer?.remotePlayers?.get(id),p=this.minecraft.player;if(!e||!p){a.volume=0;continue;}const d=Math.hypot(e.x-p.x,e.z-p.z);a.volume=this.muted?0:Math.max(0,1-d/this.maxDistance);}}
+ attach(id,stream){let a=this.audio.get(id);if(!a){a=document.createElement('audio');a.autoplay=true;a.style.display='none';document.body.appendChild(a);this.audio.set(id,a);}a.srcObject=stream;}
+ toggleMute(){this.muted=!this.muted;return this.muted;}
+}

@@ -1,0 +1,96 @@
+--- ITEMS WITHOUT CRAFTING RECIPES ---
+
+NATURAL / TERRAIN BLOCKS:
+- Stone (ID 1) [Requires Smelting Cobblestone]
+- Grass Block (ID 2)
+- Dirt (ID 3)
+- Bedrock (ID 7)
+- Sand (ID 12)
+- Gravel (ID 13)
+- Log (ID 17)
+- Leaves (ID 18)
+- Glass (ID 20) [Requires Smelting Sand]
+- Mossy Cobblestone (ID 48)
+- Obsidian (ID 49)
+- Mob Spawner (ID 52)
+- Snowy Grass (ID 60)
+- Ice (ID 79)
+- Packed Ice (ID 174)
+- Cactus (ID 81)
+- Dead Bush (ID 33)
+- Sugar Cane (ID 83)
+- Mycelium (ID 110)
+- End Stone (ID 121)
+- End Stone Bricks (ID 122)
+- Magma Block (ID 236)
+- Granite (ID 220)
+- Diorite (ID 221)
+- Andesite (ID 222)
+- Netherrack (ID 87)
+- Soul Sand (ID 88)
+
+ORES:
+- Coal Ore (ID 16)
+- Iron Ore (ID 15)
+- Gold Ore (ID 14)
+- Redstone Ore (ID 73)
+- Diamond Ore (ID 56)
+- Emerald Ore (ID 129)
+- Nether Quartz Ore (ID 153)
+
+RAW MATERIALS & DROPS:
+- Coal (ID 263) [From Coal Ore]
+- Iron Ingot (ID 265) [From Smelting Iron Ore]
+- Gold Ingot (ID 266) [From Smelting Gold Ore]
+- Diamond (ID 264) [From Diamond Ore]
+- Emerald (ID 388) [From Emerald Ore]
+- Flint (ID 318) [From Gravel]
+- String (ID 287) [From Spiders]
+- Feather (ID 288) [From Chickens]
+- Gunpowder (ID 289) [From Creepers]
+- Leather (ID 334) [From Cows]
+- Rotten Flesh (ID 367) [From Zombies]
+- Bone (ID 352) [From Skeletons]
+- Slime Ball (ID 496) [From Slimes]
+- Ender Pearl (ID 413) [From Endermen]
+- Glowstone Dust (ID 409) [From Glowstone Block]
+- Nether Quartz (ID 415) [From Quartz Ore]
+- Wheat Seeds (ID 402) [From Grass]
+- Pumpkin Seeds (ID 421) [From Pumpkins]
+
+FOODS:
+- Raw Beef (ID 363)
+- Raw Porkchop (ID 319)
+- Raw Chicken (ID 365)
+- Raw Mutton (ID 494)
+- Raw Cod (ID 349)
+- Raw Salmon (ID 354)
+- Apple (ID 260)
+- Carrot (ID 403)
+- Potato (ID 405)
+- Beetroot (ID 422)
+- Red Mushroom (ID 34)
+- Brown Mushroom (ID 35)
+
+UTILITY / SPECIAL:
+- Saddle (ID 408)
+- Name Tag (ID 414)
+- Debug Stick (ID 449)
+- Command Block (ID 137)
+- Structure Block (ID 255)
+- Spawn Eggs (Various IDs)
+- All Music Discs (IDs 2200-2211)
+- Eye of Ender (ID 360)
+- End Portal Frame (ID 120)
+
+MISC BLOCKS (Currently Uncraftable in Snapshot 2):
+- All Stained Glass (IDs 237-250)
+- All Glazed Terracotta (IDs 466-480) [Needs Smelting]
+- All Carpets (IDs 500-515)
+- All Vertical Slabs (IDs 230-234, 386, 418)
+- Chiseled Stone Bricks (ID 97)
+- Mossy Stone Bricks (ID 109)
+- Cracked Stone Bricks (ID 108)
+- Chiseled Sandstone (ID 180)
+- Redstone Lamp (ID 123) [Recipe pending]
+- Jukebox (ID 84)

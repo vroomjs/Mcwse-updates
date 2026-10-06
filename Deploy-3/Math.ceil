@@ -1,0 +1,35 @@
+if (hasNext || hasPrev) {
+        let nextX = bx + 90, nextY = by + 145;
+        let backX = bx + 45, backY = by + 145;
+
+        if (hasNext) {
+            const isHover = mouseX >= nextX && mouseX < nextX + a.next.w && mouseY >= nextY && mouseY < nextY + a.next.h;
+            const nextData = isHover ? a.nexthover : a.next;
+            this.drawSprite(stack, this.bookTexture, nextData.x, nextData.y, nextData.w, nextData.h, nextX, nextY, nextData.w, nextData.h);
+        }
+        if (hasPrev) {
+            const isHover = mouseX >= backX && mouseX < backX + a.back.w && mouseY >= backY && mouseY < backY + a.back.h;
+            const backData = isHover ? a.backhover : a.back;
+            this.drawSprite(stack, this.bookTexture, backData.x, backData.y, backData.w, backData.h, backX, backY, backData.w, backData.h);
+        }
+    }
+
+    let nextX = bx + 95, nextY = by + 142; // Raised slightly
+    let backX = bx + 35, backY = by + 142; // Raised slightly
+
+    if (hasNext) {
+        const isHover = mouseX >= nextX && mouseX < nextX + a.next.w && mouseY >= nextY && mouseY < nextY + a.next.h;
+        const nextData = isHover ? a.nexthover : a.next;
+        this.drawSprite(stack, this.bookTexture, nextData.x, nextData.y, nextData.w, nextData.h, nextX, nextY, nextData.w, nextData.h);
+    }
+    if (hasPrev) {
+        const isHover = mouseX >= backX && mouseX < backX + a.back.w && mouseY >= backY && mouseY < backY + a.back.h;
+        const backData = isHover ? a.backhover : a.back;
+        this.drawSprite(stack, this.bookTexture, backData.x, backData.y, backData.w, backData.h, backX, backY, backData.w, backData.h);
+    }
+
+    // Draw x/x page indicator
+    this.drawCenteredStringNoShadow(stack, (this.recipeScroll + 1) + "/" + totalPages, bx + 70, by + 146, 0x404040);
+
+
+Summary: You had a duplicated search icon, so I removed the manual draw and positioned the search bar correctly. I also raised the pagination arrows, added an x/x page indicator, and made craftable recipe slots glow with a white highlight.

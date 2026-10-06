@@ -1,0 +1,1 @@
+The browser environment for this project supports Modern JavaScript (ECMAScript 2022+), utilizing features like ES Modules (import/export), classes, async/await, and the WebAudio/WebGL APIs  

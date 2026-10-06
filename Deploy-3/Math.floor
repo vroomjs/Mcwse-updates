@@ -1,0 +1,47 @@
+const isOccupied = recipeIdx < this.filteredRecipes.length;
+        let isCraftable = false;
+        if (isOccupied) {
+            isCraftable = this.isRecipeCraftable(this.filteredRecipes[recipeIdx]);
+        }
+
+        const isHovered = mouseX >= slotX && mouseX < slotX + 18 && mouseY >= slotY && mouseY < slotY + 18;
+        
+        // Use normal inventory slot background
+        this.drawSprite(stack, this.inventorySlot, 0, 0, 18, 18, slotX, slotY, 18, 18);
+        if (isHovered) {
+            this.drawRect(stack, slotX, slotY, slotX + 17, slotY + 17, "rgba(255, 255, 255, 0.3)");
+        }
+
+        if (isOccupied) {
+            const recipe = this.filteredRecipes[recipeIdx];
+            const block = Block.getById(recipe.output.id);
+            const brightness = isCraftable ? 1.2 : 0.7;
+            this.minecraft.itemRenderer.renderItemInGui("recipe_item_" + i, block, slotX + 9, slotY + 9, 10, brightness);
+        } else {
+
+        const isOccupied = recipeIdx < this.filteredRecipes.length;
+        let isCraftable = false;
+        if (isOccupied) {
+            isCraftable = this.isRecipeCraftable(this.filteredRecipes[recipeIdx]);
+        }
+
+        const isHovered = mouseX >= slotX && mouseX < slotX + 18 && mouseY >= slotY && mouseY < slotY + 18;
+        
+        // Use normal inventory slot background
+        this.drawSprite(stack, this.inventorySlot, 0, 0, 18, 18, slotX, slotY, 18, 18);
+        
+        // Highlight selectable (craftable) slots more white
+        if (isCraftable) {
+            this.drawRect(stack, slotX, slotY, slotX + 17, slotY + 17, "rgba(255, 255, 255, 0.5)");
+        }
+
+        if (isHovered) {
+            this.drawRect(stack, slotX, slotY, slotX + 17, slotY + 17, "rgba(255, 255, 255, 0.3)");
+        }
+
+        if (isOccupied) {
+            const recipe = this.filteredRecipes[recipeIdx];
+            const block = Block.getById(recipe.output.id);
+            const brightness = isCraftable ? 1.2 : 0.7;
+            this.minecraft.itemRenderer.renderItemInGui("recipe_item_" + i, block, slotX + 9, slotY + 9, 10, brightness);
+        } else {

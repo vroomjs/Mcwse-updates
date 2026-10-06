@@ -1,0 +1,32 @@
+{
+  "name": "Minecraft Websim Edition",
+  "short_name": "MC WSE",
+  "description": "A fully interactive 3D Minecraft experience built for the web.",
+  "start_url": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#000000",
+  "theme_color": "#333333",
+  "icons": [
+    {
+      "src": "projectlogo.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "projectlogo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "worldthumbnail (3).png",
+      "sizes": "1280x720",
+      "type": "image/png",
+      "form_factor": "wide"
+    }
+  ]
+}

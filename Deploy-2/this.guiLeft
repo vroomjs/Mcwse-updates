@@ -1,0 +1,14 @@
+// 1. Main background
+    this.drawSprite(stack, this.bookTexture, a.mainsearch.x, a.mainsearch.y, a.mainsearch.w, a.mainsearch.h, bx, by, a.mainsearch.w, a.mainsearch.h);
+
+    // Draw search button icon beside textbox
+    this.drawSprite(stack, this.bookTexture, a.searchbutton.x, a.searchbutton.y, a.searchbutton.w, a.searchbutton.h, bx + 10, by + 14, a.searchbutton.w, a.searchbutton.h);
+
+    // Draw craftable toggle beside search box
+    let toggleX = bx + 110;
+
+    // 1. Main background
+    this.drawSprite(stack, this.bookTexture, a.mainsearch.x, a.mainsearch.y, a.mainsearch.w, a.mainsearch.h, bx, by, a.mainsearch.w, a.mainsearch.h);
+
+    // Draw craftable toggle beside search box
+    let toggleX = bx + 110;

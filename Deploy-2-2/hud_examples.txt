@@ -1,0 +1,33 @@
+--- ADVANCED HUD & SELECTOR EXAMPLES ---
+Use these in command blocks or holding a stick!
+
+--- PERSISTENT HUD UI ---
+The 'persistent' flag in the UI tag keeps the elements on screen even when the menu is closed.
+
+1. Global Server Stats HUD:
+/item modify selected {"name":"§6Server Monitor", "ui": {"persistent": true, "elements": [{"type":"text", "text":"§lSERVER STATUS", "x":-150, "y":-100, "color":"#FFFF55"}, {"type":"text", "text":"Players Online: {storage:server.players}", "x":-150, "y":-90}, {"type":"text", "text":"World Time: {storage:server.time}", "x":-150, "y":-80}]}}
+
+2. RPG Quest Tracker:
+/item modify selected {"name":"§bQuest Log", "ui": {"persistent": true, "elements": [{"type":"text", "text":"§b§lQUEST: Dragon Slayer", "x":100, "y":-100}, {"type":"text", "text":"- Find the Dragon Lair (0/1)", "x":100, "y":-90}, {"type":"text", "text":"- Collect Fire Res Gems ({storage:quest.gems}/5)", "x":100, "y":-80}]}}
+
+3. Admin Warning Overlay:
+/hud create warning {"persistent": true, "elements": [{"type":"text", "text":"§4§lWARNING: SERVER REBOOT IN 5 MINUTES", "y":-110, "color":"#FF5555"}]}
+
+--- SELECTOR TAG EXAMPLES ---
+Commands now support @a (Everyone), @r (Random), and specific Usernames.
+
+4. Global Speed Boost (Everyone):
+/effect @a speed 30 2
+
+5. Gift to specific user:
+/give MyFriendSteve diamond 64
+
+6. Randomly Scale a Player:
+/setattribute @r scale 2.0
+
+7. Global Healing:
+/health @a 20
+
+--- COMPLEX DATA PIPELINES ---
+8. Dynamic HUD Counter (Run in repeating command block):
+/execute as @a run data modify storage server.time set {look_x}

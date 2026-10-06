@@ -1,0 +1,23 @@
+--- SELECTOR & TARGETING CHEAT SHEET ---
+
+1. @p - The nearest player (or yourself in Singleplayer)
+2. @a - Every player currently in the world (Global)
+3. @r - A random player from everyone online
+4. <Username> - A specific player by their name
+
+EXAMPLES:
+
+/tp @a 0 64 0
+(Teleports everyone to spawn)
+
+/gamemode creative @r
+(Pick a lucky winner for creative mode)
+
+/setAttribute @a speed 1.5
+(Increase walk speed for the whole server)
+
+/clear @a apple
+(Confiscate all apples from everyone)
+
+/item property selected weight +1
+/item modify selected {"onUse":"execute if data storage item.weight 10 run title @a title §6CRITICAL MASS REACHED"}

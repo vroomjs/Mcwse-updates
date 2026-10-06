@@ -1,0 +1,351 @@
+--- ADVANCED MAGIC STICK COMMANDS & CUSTOM UI ---
+Paste these into the chat while holding a stick!
+
+--- DYNAMIC UI EXAMPLES ---
+The 'ui' tag allows creating custom menus when an item is right-clicked.
+
+1. Admin Menu Stick:
+/item modify selected {"name":"§cAdmin Control", "ui": {"elements": [{"type":"button", "text":"Kill All Mobs", "command":"kill all"}, {"type":"button", "text":"Clear Weather", "command":"weather clear"}, {"type":"button", "text":"Set Day", "command":"time day"}]}}
+
+2. Teleportation Scroll:
+/item modify selected {"name":"§bWarp Scroll", "ui": {"elements": [{"type":"button", "text":"Warp to Nether", "command":"tp @p nether"}, {"type":"button", "text":"Warp to Biome", "command":"tp @p desert"}]}}
+
+3. Creative Shop:
+/item modify selected {"name":"§eItem Shop", "ui": {"elements": [{"type":"text", "text":"Choose an Item", "y":-40}, {"type":"button", "text":"Diamond Pickaxe", "command":"give @p diamond_pickaxe"}, {"type":"button", "text":"Golden Apple", "command":"give @p golden_apple"}]}}
+
+--- TITLE & ANNOUNCEMENTS ---
+4. Welcome Stick (Right-click to show a huge title):
+/item modify selected {"name":"§aWelcome Wand", "onUse":"title @p title [green] Welcome to Minecraft!"}
+
+5. Warning Stick (Red action bar warning):
+/item modify selected {"name":"§4Warning Stick", "onUse":"title @p actionbar [red] CAUTION: T-Minus 5 Seconds"}
+
+--- MOB AI MANIPULATION ---
+6. Zombie Commander (Makes all zombies chase YOU):
+/item modify selected {"name":"§2Undead Master", "onUse":"ai @e[type=zombie] chase @p"}
+
+7. Scarecrow (Makes all creepers flee from you):
+/item modify selected {"name":"§eCreeper Scare", "onUse":"ai @e[type=creeper] flee @p"}
+
+8. Freeze Ray (Stops all entities in their tracks):
+/item modify selected {"name":"§bFreeze Ray", "onUse":"ai @e stay"}
+
+--- CONDITIONAL COMMANDS ---
+9. Master Miner (Only says 'Ouch' if hitting Bedrock):
+/item modify selected {"name":"§7Safety Drill", "onHit":"execute if block {look_x} {look_y} {look_z} bedrock run say Ouch! That block is too hard."}
+
+10. Bridge Builder (Only places glass if looking at air):
+/item modify selected {"name":"§bSky Bridge", "onUse":"execute if block {look_x} {look_y} {look_z} air run setblock {look_x} {look_y} {look_z} glass"}
+
+--- 15 MORE COOL UTILITIES ---
+11. Gravity Wand (Toggle gravity on cobblestone):
+/item modify selected {"name":"§8Gravity Wand", "onUse":"blockproperty cobblestone gravity true"}
+
+12. Fireworks (Arrow shower with title):
+/item modify selected {"name":"§6Celebration", "onUse":"shoot arrow 2.0", "onUse2":"title @p actionbar §eHappy Crafting!"}
+
+13. Giant Growth (Increase your scale):
+/item modify selected {"name":"§dTitan Potion", "onUse":"setattribute @p scale 5"}
+
+14. Ant Man (Decrease your scale):
+/item modify selected {"name":"§dAnt Potion", "onUse":"setattribute @p scale -1.5"}
+
+15. Instant Tunnel (Clears 5x5 tunnel):
+/item modify selected {"name":"§7Tunnel Bore", "onUse":"fill ~-2 ~ ~-2 ~2 ~2 ~10 air"}
+
+16. Health Potion:
+/item modify selected {"name":"§cHeal Item", "onUse":"health @p 20"}
+
+17. Invisi-Stick:
+/item modify selected {"name":"§fGhost Stick", "onUse":"effect @p invisibility 60"}
+
+18. Super Speed:
+/item modify selected {"name":"§bFlash", "onUse":"effect @p speed 60 10"}
+
+19. Meteor Summoner:
+/item modify selected {"name":"§6Meteor", "onUse":"execute at @p run setblock ~ ~15 ~ primed_tnt"}
+
+20. Village Instantizer:
+/item modify selected {"name":"§aVillage Seed", "onUse":"spawn village"}
+
+21. House Builder:
+/item modify selected {"name":"§aHouse Kit", "onUse":"spawn village_house1"}
+
+22. Weather Controller:
+/item modify selected {"name":"§bSky Master", "onUse":"weather snow"}
+
+23. Time Skipper:
+/item modify selected {"name":"§eTime Turner", "onUse":"time night"}
+
+24. Spawner Tool:
+/item modify selected {"name":"§5Spawner", "onUse":"summon zombie"}
+
+25. Command Stick (Gives you a command block):
+/item modify selected {"name":"§cCMD", "onUse":"give @p command_block"}
+
+--- TERRAFORMING & UTILITY ---
+1. Terraforming Wand (L-Click: Sink, R-Click: Rise, Scroll: Radius):
+/item modify selected {"name":"§bTerraforming Wand", "onHit":"terrain sink {radius} 1 {look_x} {look_y} {look_z}", "onUse":"terrain rise {radius} 1 {look_x} {look_y} {look_z}", "onScrollUp":"item property selected radius +1", "onScrollDown":"item property selected radius -1", "radius":3}
+
+2. The Eraser (Right-click to clear a 5x5x5 area of air):
+/item modify selected {"name":"§7The Eraser", "onUse":"fill ~-2 ~-2 ~-2 ~2 ~2 ~2 air"}
+
+3. Instant Mine (Gives 30s of Haste 255 for instant breaking):
+/item modify selected {"name":"§eMining Drill", "onUse":"effect @p haste 30 255"}
+
+4. Grave Digger (Left-click a block to dig a 3-block deep hole):
+/item modify selected {"name":"§8Grave Digger", "onBreak":"fill ~ ~-3 ~ ~ ~-1 ~ air"}
+
+5. Growth Wand (Right-click to apply bonemeal in a 5 block radius):
+/item modify selected {"name":"§aDruid Staff", "onUse":"execute at @p run fill ~-2 ~-1 ~-2 ~2 ~1 ~2 bone_meal"}
+
+--- DESTRUCTION & COMBAT ---
+6. Terminator Stick (Hit any entity to kill ALL non-player entities):
+/item modify selected {"name":"§cTerminator Stick", "onHit":"kill all"}
+
+7. Nuke Stick (Right-click to spawn a TNT block 5 blocks above you):
+/item modify selected {"name":"§4NUKE", "onUse":"execute at @p run setblock ~ ~5 ~ tnt"}
+
+8. Meteor Shower (Right-click to rain down arrows from the sky):
+/item modify selected {"name":"§6Meteor Shower", "onUse":"execute at @p run fill ~-3 ~15 ~-3 ~3 ~15 ~3 arrow"}
+
+9. Explosive Touch (Left-click a block to prime a TNT instantly):
+/item modify selected {"name":"§4C4 Detonator", "onBreak":"summon primed_tnt"}
+
+10. Lightning Rod (Right-click to play an explosion sound and spawn fire):
+/item modify selected {"name":"§eZeus Bolt", "onUse":"execute at @p run setblock ~ ~ ~ fire", "onUse2":"playsound random.explode ~ ~ ~"}
+
+--- SUMMONING & MOBS ---
+11. Summoning Wand (Right-click to summon a pig):
+/item modify selected {"name":"§6Summoning Wand", "onUse":"summon pig"}
+
+12. Villager Recruiter (Right-click to spawn a villager):
+/item modify selected {"name":"§dRecruiter", "onUse":"summon villager"}
+
+13. Golem Guard (Summons a Snow Golem to defend you):
+/item modify selected {"name":"§fFrost Guard", "onUse":"summon snow_golem"}
+
+14. Instant Village (Right-click to spawn a village house):
+/item modify selected {"name":"§aVillage Instantiator", "onUse":"spawn village_house1"}
+
+15. Minecart Loader (Right-click to spawn a Minecart):
+/item modify selected {"name":"§7Cart Loader", "onUse":"summon minecart"}
+
+--- ENVIRONMENT & TRAVEL ---
+16. Sunbringer (Set time to Day):
+/item modify selected {"name":"§eSunbringer", "onUse":"time day"}
+
+17. Moonshadow (Set time to Night):
+/item modify selected {"name":"§1Moonshadow", "onUse":"time night"}
+
+18. Frostbite (Start a Snowstorm):
+/item modify selected {"name":"§bFrostbite", "onUse":"weather snow"}
+
+19. Clear Skies (Stop weather):
+/item modify selected {"name":"§fClear Skies", "onUse":"weather clear"}
+
+20. Hell-Gate (Teleport to the Nether):
+/item modify selected {"name":"§4Hell-Gate", "onUse":"tp @p nether"}
+
+21. Home-Sticker (Teleport to the Overworld):
+/item modify selected {"name":"§2Home-Sticker", "onUse":"tp @p overworld"}
+
+--- MOVEMENT & PHYSICS ---
+22. Teleportation Stick (Leap 10 blocks into the air):
+/item modify selected {"name":"§bTeleportation Stick", "onUse":"tp @p ~ ~10 ~"}
+
+23. God Speed (Massive speed boost):
+/item modify selected {"name":"§eStick of Haste", "onUse":"effect @p speed 60 10"}
+
+24. Holy Grail (Restore full health):
+/item modify selected {"name":"§dHoly Grail", "onUse":"health @p 20"}
+
+25. Gravity's Bane (Make ALL Cobblestone fall like sand):
+/item modify selected {"name":"§7Gravity's Bane", "onUse":"blockproperty cobblestone gravity true"}
+
+26. Zero Gravity (Gives 1 minute of slow falling):
+/item modify selected {"name":"§fFeather Stick", "onUse":"effect @p slow_falling 60 1"}
+
+27. Superman (Fly for 60 seconds):
+/item modify selected {"name":"§9Flight Wand", "onUse":"gamemode creative", "onHit":"gamemode survival"}
+
+28. Tunnel Bore (Clears a 1x2 tunnel 10 blocks forward):
+/item modify selected {"name":"§6Tunnel Bore", "onUse":"execute at @p run fill ~ ~ ~ ~ ~1 ~10 air"}
+
+--- MISC FUN ---
+29. Invisibility Cloak (Become invisible for 1 minute):
+/item modify selected {"name":"§8Ghost Stick", "onUse":"effect @p invisibility 60 1"}
+
+30. Super Sized (Increase your scale to 5.0):
+/item modify selected {"name":"§5Giant Stick", "onUse":"setattribute @p scale 5"}
+
+31. Pocket Sized (Decrease your scale to -1.5):
+/item modify selected {"name":"§dAnt Stick", "onUse":"setattribute @p scale -1.5"}
+
+--- 50+ ADVANCED COMMAND BLOCK & CHAT FEED EXAMPLES ---
+Use these in command blocks or directly in the chat!
+
+--- WORLD GENERATION & MASSIVE CONSTRUCTION ---
+32. Instant Lava Moat (Clears a ring of lava around current position):
+/fill ~-10 ~-1 ~-10 ~10 ~-1 ~10 lava
+33. Sky Platform (Creates a 10x10 glass platform high in the air):
+/fill ~-5 ~20 ~-5 ~5 ~20 ~5 glass
+34. Clear Underground Cave (Fills a massive cube with air for base building):
+/fill ~-15 ~-15 ~-15 ~15 ~-1 ~15 air
+35. Snow-fication (Turns ground into snowy grass in a large area):
+/fill ~-20 ~-1 ~-20 ~20 ~-1 ~20 snowy_grass
+36. Desert Invasion (Replaces ground with sand):
+/fill ~-15 ~-1 ~-15 ~15 ~-1 ~15 sand
+37. Forest Floor (Creates a thick layer of mycelium):
+/fill ~-10 ~-1 ~-10 ~10 ~-1 ~10 mycelium
+38. Prison Cell (Builds a solid bedrock box around you):
+/fill ~-2 ~-1 ~-2 ~2 ~3 ~2 bedrock
+39. Giant Pillar (Creates a stone pillar reaching to the sky):
+/fill ~ ~ ~ ~ 127 ~ stone
+40. Deep Pit (Digs a 2x2 hole all the way to bedrock):
+/fill ~ ~-64 ~ ~1 ~ ~1 air
+41. Road Builder (Lays a long strip of cobblestone path):
+/fill ~ ~-1 ~ ~ ~-1 ~30 cobblestone
+42. Water Tank (Creates a 5x5x5 box of water):
+/fill ~1 ~ ~1 ~5 ~5 ~5 water
+
+--- MOB MANIPULATION & CUSTOM ENTITIES ---
+43. Zombie Siege (Summons 10 zombies in a row):
+/fill ~5 ~ ~-5 ~5 ~ ~5 zombie
+44. Flying Chickens (Spawns chickens high in the air):
+/fill ~ ~20 ~ ~5 ~20 ~5 chicken
+45. Creeper Minefield (Scatters creepers around):
+/fill ~-10 ~ ~-10 ~10 ~ ~10 creeper
+46. Peaceful Mode Force (Kills every hostile entity immediately):
+/kill all
+47. Follow the Leader (Makes all nearby cows chase the player):
+/ai @e[type=cow] chase @p
+48. Chicken Stampede (Makes all chickens flee from you):
+/ai @e[type=chicken] flee @p
+49. Guard Golems (Summons a line of Snow Golems to protect a border):
+/fill ~-5 ~ ~10 ~5 ~ ~10 snow_golem
+50. Kamikaze Squad (Summons Primed TNT on top of all nearby zombies):
+/execute as @e[type=zombie] run summon primed_tnt
+51. Statue Mode (Freezes every entity in place):
+/ai @e stay
+52. Giant Guard (Summons a massive cow):
+/execute at @p run summon cow
+/data merge entity @e[type=cow] {"attributeScale": 5}
+53. Tiny Terror (Makes a very small, fast zombie):
+/execute at @p run summon zombie
+/data merge entity @e[type=zombie] {"attributeScale": -1.5, "speedMultiplier": 2.0}
+
+--- COMPLEX LOGIC & EXECUTIONS ---
+54. Proximity Alarm (Shows a title when a creeper is near - Run in repeating command block):
+/execute if entity @e[type=creeper] run title @p actionbar [red] CREEPER DETECTED!
+55. Automated Bridge (Places glass beneath you as you walk):
+/execute at @p run setblock ~ ~-1 ~ glass
+56. Fire Walk (Leaves a trail of fire behind you):
+/execute at @p run setblock ~ ~ ~ fire
+57. Underground Ore Seeker (Sinks you 2 blocks down to find ores):
+/terrain sink 1 2
+58. Instant Igloo House (Spawns an igloo at your location):
+/spawn igloo
+59. Desert Oasis (Spawns a desert well structure):
+/spawn desert_well
+60. Rapid Projectile Launch (Shoots an arrow every time a command block runs):
+/shoot arrow 3.0
+61. Ender Pearl Teleport Maze (Spawns ender pearls randomly):
+/fill ~-5 ~10 ~-5 ~5 ~10 ~5 ender_pearl
+62. Fireworks Show (Shoots multiple projectiles with splash sounds):
+/shoot snowball 2.0
+/playsound random.explode ~ ~ ~
+
+--- PLAYER ATTRIBUTES & BUFFS ---
+63. Flash Speed (Set player speed to extreme levels):
+/setattribute @p speed 5.0
+64. Titan Mode (Maximize player size and health):
+/setattribute @p scale 3.0
+/health @p 100
+65. God Mode (Full health + Creative):
+/health @p 20
+/gamemode creative
+66. Ghost Mode (Invisibility + Spectator):
+/effect @p invisibility 9999 1
+/gamemode spectator
+67. Super Jump (Infinite high jumping):
+/effect @p jump_boost 9999 5
+68. Ultimate Mining Speed (Instant break speed):
+/effect @p haste 9999 255
+69. Night Stalker (Permanent Night Vision):
+/effect @p night_vision 9999 1
+70. Feather Weight (No fall damage + slow falling):
+/effect @p slow_falling 9999 1
+
+--- CINEMATIC & SYSTEM ---
+71. Dramatic Entrance (Large green title with fade times):
+/title @p times {"fadeIn":2000, "stay":5000, "fadeOut":2000}
+/title @p title [green] THE KING HAS ARRIVED
+72. Warning System (Red action bar alert):
+/title @p actionbar [red] WARNING: SYSTEM OVERLOAD
+73. Location Reveal (Shows coordinates as a sub-title):
+/title @p subtitle ~ ~ ~
+/title @p title §fYour Location
+74. Achievement Celebration (Plays sound and shows action bar):
+/playsound random.levelup ~ ~ ~
+/title @p actionbar §6Level Up!
+75. Clean Slate (Clears inventory, effects, and resets size):
+/clear @p
+/effect @p clear
+/setattribute @p scale 0
+76. Dimensional Warp (Instant Nether Travel):
+/tp @p nether
+77. Home Warp (Teleport back to Overworld):
+/tp @p overworld
+78. Server Broadcast (Send a message as the server):
+/say Attention all players: A dragon has been sighted!
+79. Social Emote (Perform an action):
+/me is feeling very powerful!
+80. Advanced Info HUD (Constant coordinate and speed display):
+/execute at @p run title @p actionbar §bXYZ: {look_x} {look_y} {look_z}
+
+--- ITEM CREATION COMBOS ---
+81. The Eraser (Item that clears a 5x5 cube of blocks):
+/item modify selected {"name":"§7Block Eraser", "onUse":"fill ~-2 ~-2 ~-2 ~2 ~2 ~2 air"}
+82. The Terraformer (Scroll through radius with mouse wheel):
+/item modify selected {"name":"§bTerraformer", "onUse":"terrain rise {radius} 1", "onHit":"terrain sink {radius} 1", "onScrollUp":"item property selected radius +1", "onScrollDown":"item property selected radius -1", "radius":3}
+
+--- ADVANCED MINIGAME: UI-BASED MINESWEEPER (5x5) ---
+Paste this while holding a stick. Right-click to play!
+
+1. Minesweeper Master Stick:
+/item modify selected {"name":"§cMinesweeper 5x5", "ui": {"elements": [{"type":"text", "text":"MINESWEEPER 5x5", "y":-75}, {"type":"text", "text":"Status: {storage:mine.status}", "y":-62}, {"type":"button", "text":"{storage:mine.s0}", "x":-44, "y":-40, "width":20, "close":false, "command":"execute if data storage mine.m0 1 run data merge storage mine.status \"Game Over!\""}, {"type":"button", "text":"{storage:mine.s1}", "x":-22, "y":-40, "width":20, "close":false, "command":"execute if data storage mine.m1 1 run data merge storage mine.status \"Game Over!\""}, {"type":"button", "text":"{storage:mine.s2}", "x":0, "y":-40, "width":20, "close":false, "command":"execute if data storage mine.m2 1 run data merge storage mine.status \"Game Over!\""}, {"type":"button", "text":"{storage:mine.s3}", "x":22, "y":-40, "width":20, "close":false, "command":"execute if data storage mine.m3 1 run data merge storage mine.status \"Game Over!\""}, {"type":"button", "text":"{storage:mine.s4}", "x":44, "y":-40, "width":20, "close":false, "command":"execute if data storage mine.m4 1 run data merge storage mine.status \"Game Over!\""}, {"type":"button", "text":"{storage:mine.s5}", "x":-44, "y":-18, "width":20, "close":false, "command":"execute if data storage mine.m5 1 run data merge storage mine.status \"Game Over!\""}, {"type":"button", "text":"{storage:mine.s6}", "x":-22, "y":-18, "width":20, "close":false, "command":"execute if data storage mine.m6 1 run data merge storage mine.status \"Game Over!\""}, {"type":"button", "text":"{storage:mine.s7}", "x":0, "y":-18, "width":20, "close":false, "command":"execute if data storage mine.m7 1 run data merge storage mine.status \"Game Over!\""}, {"type":"button", "text":"{storage:mine.s8}", "x":22, "y":-18, "width":20, "close":false, "command":"execute if data storage mine.m8 1 run data merge storage mine.status \"Game Over!\""}, {"type":"button", "text":"{storage:mine.s9}", "x":44, "y":-18, "width":20, "close":false, "command":"execute if data storage mine.m9 1 run data merge storage mine.status \"Game Over!\""}, {"type":"button", "text":"{storage:mine.s10}", "x":-44, "y":4, "width":20, "close":false, "command":"execute if data storage mine.m10 1 run data merge storage mine.status \"Game Over!\""}, {"type":"button", "text":"{storage:mine.s11}", "x":-22, "y":4, "width":20, "close":false, "command":"execute if data storage mine.m11 1 run data merge storage mine.status \"Game Over!\""}, {"type":"button", "text":"{storage:mine.s12}", "x":0, "y":4, "width":20, "close":false, "command":"execute if data storage mine.m12 1 run data merge storage mine.status \"Game Over!\""}, {"type":"button", "text":"{storage:mine.s13}", "x":22, "y":4, "width":20, "close":false, "command":"execute if data storage mine.m13 1 run data merge storage mine.status \"Game Over!\""}, {"type":"button", "text":"{storage:mine.s14}", "x":44, "y":4, "width":20, "close":false, "command":"execute if data storage mine.m14 1 run data merge storage mine.status \"Game Over!\""}, {"type":"button", "text":"{storage:mine.s15}", "x":-44, "y":26, "width":20, "close":false, "command":"execute if data storage mine.m15 1 run data merge storage mine.status \"Game Over!\""}, {"type":"button", "text":"{storage:mine.s16}", "x":-22, "y":26, "width":20, "close":false, "command":"execute if data storage mine.m16 1 run data merge storage mine.status \"Game Over!\""}, {"type":"button", "text":"{storage:mine.s17}", "x":0, "y":26, "width":20, "close":false, "command":"execute if data storage mine.m17 1 run data merge storage mine.status \"Game Over!\""}, {"type":"button", "text":"{storage:mine.s18}", "x":22, "y":26, "width":20, "close":false, "command":"execute if data storage mine.m18 1 run data merge storage mine.status \"Game Over!\""}, {"type":"button", "text":"{storage:mine.s19}", "x":44, "y":26, "width":20, "close":false, "command":"execute if data storage mine.m19 1 run data merge storage mine.status \"Game Over!\""}, {"type":"button", "text":"{storage:mine.s20}", "x":-44, "y":48, "width":20, "close":false, "command":"execute if data storage mine.m20 1 run data merge storage mine.status \"Game Over!\""}, {"type":"button", "text":"{storage:mine.s21}", "x":-22, "y":48, "width":20, "close":false, "command":"execute if data storage mine.m21 1 run data merge storage mine.status \"Game Over!\""}, {"type":"button", "text":"{storage:mine.s22}", "x":0, "y":48, "width":20, "close":false, "command":"execute if data storage mine.m22 1 run data merge storage mine.status \"Game Over!\""}, {"type":"button", "text":"{storage:mine.s23}", "x":22, "y":48, "width":20, "close":false, "command":"execute if data storage mine.m23 1 run data merge storage mine.status \"Game Over!\""}, {"type":"button", "text":"{storage:mine.s24}", "x":44, "y":48, "width":20, "close":false, "command":"execute if data storage mine.m24 1 run data merge storage mine.status \"Game Over!\""}, {"type":"button", "text":"§6RESET GAME", "y":75, "width":100, "close":false, "command":"data merge storage mine {\"status\":\"Playing\",\"s0\":\"?\",\"s1\":\"?\",\"s2\":\"?\",\"s3\":\"?\",\"s4\":\"?\",\"s5\":\"?\",\"s6\":\"?\",\"s7\":\"?\",\"s8\":\"?\",\"s9\":\"?\",\"s10\":\"?\",\"s11\":\"?\",\"s12\":\"?\",\"s13\":\"?\",\"s14\":\"?\",\"s15\":\"?\",\"s16\":\"?\",\"s17\":\"?\",\"s18\":\"?\",\"s19\":\"?\",\"s20\":\"?\",\"s21\":\"?\",\"s22\":\"?\",\"s23\":\"?\",\"s24\":\"?\",\"m0\":0,\"m1\":1,\"m2\":0,\"m3\":0,\"m4\":0,\"m5\":0,\"m6\":0,\"m7\":1,\"m8\":0,\"m9\":0,\"m10\":0,\"m11\":0,\"m12\":0,\"m13\":0,\"m14\":1,\"m15\":0,\"m16\":0,\"m17\":0,\"m18\":0,\"m19\":0,\"m20\":1,\"m21\":0,\"m22\":0,\"m23\":1,\"m24\":0}"}]}}
+
+How to play:
+- First, click RESET GAME in the menu to set up the board.
+- The button texts change based on 'mine.s0', 'mine.s1', etc.
+- Clicking a button checks if a mine exists in 'mine.m#' and updates 'mine.status'.
+- Real Minesweeper logic can be expanded by adding more buttons and logic to reveal numbers!
+
+--- ENTITY MODIFICATION EXAMPLES ---
+83. Tiny Fast Zombie:
+/data merge entity @e[type=zombie] {"attributeScale": -1.5, "speedMultiplier": 3.0}
+
+84. Giant Cow:
+/data merge entity @e[type=cow] {"attributeScale": 5.0}
+
+85. Super Strength Pig:
+/data merge entity @e[type=pig] {"health": 100, "speedMultiplier": 2.5}
+
+--- 3D BLOCK DISPLAYS ---
+Use /summon block_display to create decorative, animated blocks!
+
+86. Giant Rotating Diamond:
+/summon block_display ~ ~3 ~ {"block":"diamond_block", "scale":3.0, "rotate":2.5, "bob":0.2, "bobSpeed":0.05}
+
+87. Bouncing Gold Coin:
+/summon block_display ~ ~2 ~ {"block":"gold_block", "scale":0.5, "rotate":5.0, "bob":0.5, "bobSpeed":0.15}
+
+88. Floating Shop Icon (Grass):
+/summon block_display ~ ~1.5 ~ {"block":"grass", "scale":1.0, "bob":0.1, "bobSpeed":0.02}
+
+89. Fast Spin Emerald:
+/summon block_display ~ ~2 ~ {"block":"emerald_block", "scale":1.2, "rotate":15.0}
+
+90. Clean All Displays:
+/kill all (Deletes all displays and mobs)

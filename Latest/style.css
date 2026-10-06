@@ -1,0 +1,274 @@
+body, html {
+    margin: 0;
+    overflow: hidden;
+    width: 100%;
+    height: 100%;
+    background-color: #000; /* Set a black background to prevent white flashes */
+}
+
+canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    image-rendering: -moz-crisp-edges; /* Firefox */
+    image-rendering: -webkit-crisp-edges; /* Webkit (Safari) */
+    image-rendering: pixelated; /* Chrome */
+}
+
+#background {
+    background-image: url(src/resources/gui/background.png);
+    background-repeat: no-repeat;
+    background-size: contain;
+    background-position: center;
+    image-rendering: -moz-crisp-edges; /* Firefox */
+    image-rendering: -webkit-crisp-edges; /* Webkit (Safari) */
+    image-rendering: pixelated; /* Chrome */
+}
+
+.fullscreen {
+    position: absolute;
+    top: 0;
+    left: 0;
+    display: block;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+}
+
+#canvas-container {
+    touch-action: none;
+}
+
+/* Mobile UI Styles */
+.mobile-ui {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 1000;
+    user-select: none;
+}
+
+.mobile-ui.visible {
+    display: block;
+}
+
+.mc-mobile-btn {
+    pointer-events: auto;
+    background: rgba(128, 128, 128, 0.35);
+    border: 3px solid rgba(0, 0, 0, 0.4);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: sans-serif;
+    font-weight: bold;
+    font-size: 20px;
+    border-radius: 2px;
+    box-shadow: inset -2px -2px 0 rgba(0,0,0,0.4), inset 2px 2px 0 rgba(255,255,255,0.2);
+    transition: background 0.05s;
+    image-rendering: pixelated;
+}
+
+.mc-mobile-btn:active {
+    background: rgba(180, 180, 180, 0.6);
+    border-color: rgba(255, 255, 255, 0.4);
+    box-shadow: inset 2px 2px 0 rgba(0,0,0,0.4), inset -2px -2px 0 rgba(255,255,255,0.2);
+}
+
+.top-bar {
+    position: absolute;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 8px;
+}
+
+.icon-btn {
+    width: 36px;
+    height: 36px;
+}
+
+.d-pad {
+    position: absolute;
+    bottom: 15px;
+    left: 15px;
+    width: 150px;
+    height: 150px;
+    display: grid;
+    grid-template-areas: 
+        ". up ."
+        "left sneak right"
+        ". down .";
+    grid-template-columns: repeat(3, 50px);
+    grid-template-rows: repeat(3, 50px);
+}
+
+.d-btn { width: 50px; height: 50px; }
+.up { grid-area: up; background-image: url('src/resources/gui/icons.png'); background-position: -2px -2px; background-size: 300px; } /* Using placeholder offsets or icons */
+.up::after { content: '▲'; }
+.left { grid-area: left; }
+.left::after { content: '◀'; }
+.center { grid-area: sneak; font-size: 14px; }
+.center::after { content: '◆'; }
+.right { grid-area: right; }
+.right::after { content: '▶'; }
+.down { grid-area: down; }
+.down::after { content: '▼'; }
+
+.action-pad {
+    position: absolute;
+    bottom: 15px;
+    right: 15px;
+    width: 60px;
+    height: 160px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.a-btn {
+    width: 60px;
+    height: 60px;
+}
+
+.jump { background: rgba(128, 128, 128, 0.5); }
+.jump::after { content: '▲'; font-size: 24px; }
+.sprint::after { content: '●'; }
+.place::after { content: '▼'; }
+.sprint { background: rgba(128, 128, 128, 0.35); font-size: 12px; }
+.place { background: rgba(128, 128, 128, 0.35); }
+
+
+/* Backrooms-only VHS treatment. The element is inert, so it cannot block
+   mouse, touch, keyboard, or pointer-lock input. */
+#backrooms-vhs-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 10002;
+    display: none;
+    pointer-events: none;
+    opacity: 0;
+    overflow: hidden;
+    mix-blend-mode: screen;
+    background:
+        repeating-linear-gradient(0deg, rgba(255, 244, 175, 0.08) 0 1px, rgba(0, 0, 0, 0.13) 1px 3px),
+        repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.025) 0 1px, transparent 1px 4px),
+        radial-gradient(ellipse at center, transparent 42%, rgba(0, 0, 0, 0.30) 100%);
+    background-size: 100% 3px, 4px 100%, 100% 100%;
+}
+
+#backrooms-vhs-overlay.active {
+    display: block;
+    opacity: 0.21;
+    animation: backrooms-vhs-roll 0.19s steps(2, end) infinite;
+}
+
+#backrooms-vhs-overlay.active::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    opacity: 0.18;
+    background: repeating-linear-gradient(
+        135deg,
+        transparent 0 3px,
+        rgba(255, 255, 255, 0.18) 3px 4px,
+        transparent 4px 8px
+    );
+    animation: backrooms-vhs-static 0.11s steps(2, end) infinite;
+}
+
+/* Lens falloff and very subtle edge fringing sell the found-footage/bodycam
+   treatment without affecting controls or the actual render resolution. */
+#backrooms-vhs-overlay.active::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border: 1px solid rgba(210, 192, 113, 0.28);
+    box-shadow:
+        inset 0 0 10vw rgba(0, 0, 0, 0.16),
+        inset 0 0 2vw rgba(73, 95, 34, 0.22),
+        inset 0 0 18vw rgba(0, 0, 0, 0.42);
+    animation: backrooms-bodycam-drift 5.8s ease-in-out infinite;
+}
+
+.backrooms-bodycam-hud {
+    display: none;
+    position: absolute;
+    top: 14px;
+    left: 16px;
+    right: 16px;
+    z-index: 2;
+    align-items: center;
+    justify-content: space-between;
+    color: rgba(240, 232, 184, 0.86);
+    font: 700 11px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    letter-spacing: 0.11em;
+    text-shadow: 1px 1px 1px rgba(0, 0, 0, 0.9);
+}
+
+#backrooms-vhs-overlay.active .backrooms-bodycam-hud {
+    display: flex;
+}
+
+.backrooms-rec {
+    color: rgba(255, 137, 111, 0.92);
+}
+
+.backrooms-rec i {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    margin: 0 5px 1px 0;
+    border-radius: 50%;
+    background: #ff5b4a;
+    box-shadow: 0 0 7px rgba(255, 72, 55, 0.95);
+    animation: backrooms-rec-blink 1.3s steps(2, end) infinite;
+}
+
+.backrooms-level {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    color: rgba(228, 219, 160, 0.66);
+    font-size: 9px;
+}
+
+#backrooms-vhs-overlay.active.flicker {
+    opacity: 0.58;
+    background-color: rgba(255, 245, 186, 0.16);
+    transform: translateX(-2px);
+    filter: contrast(1.45) brightness(1.25);
+}
+
+body.backrooms-vhs-active #canvas-container {
+    filter: sepia(0.20) saturate(0.76) contrast(1.14) brightness(0.94);
+}
+
+@keyframes backrooms-vhs-roll {
+    0% { background-position: 0 0, 0 0, 0 0; }
+    50% { background-position: 0 2px, 2px 0, 0 0; }
+    100% { background-position: 0 -1px, -1px 0, 0 0; }
+}
+
+@keyframes backrooms-vhs-static {
+    0% { transform: translate(0, 0); }
+    33% { transform: translate(1px, -1px); }
+    66% { transform: translate(-1px, 1px); }
+    100% { transform: translate(0, 0); }
+}
+
+@keyframes backrooms-bodycam-drift {
+    0%, 100% { transform: translate(0, 0); opacity: 0.94; }
+    40% { transform: translate(0.45px, -0.3px); opacity: 1; }
+    72% { transform: translate(-0.35px, 0.25px); opacity: 0.96; }
+}
+
+@keyframes backrooms-rec-blink {
+    0%, 60% { opacity: 1; }
+    61%, 100% { opacity: 0.34; }
+}
