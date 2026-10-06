@@ -5,7 +5,8 @@ Every release lives in a folder named after its **version number**.
 
 | Folder | Files | Notes |
 |---|---|---|
-| `1/` | 574 | earliest archived build |
+| `0/` | 551 | optimization update (community build, "Ai guy"); reports itself as 1.01 |
+| `1/` | 574 | |
 | `2/` | 592 | |
 | `2-2/` | 594 | |
 | `3/` | 594 | |

@@ -1,0 +1,504 @@
+import ModelPlayer from "../../model/model/ModelPlayer.js";
+import EntityRenderer from "../EntityRenderer.js";
+import Block from "../../../world/block/Block.js";
+import * as THREE from "three";
+import BlockRenderType from "../../../../util/BlockRenderType.js";
+import { disposeGroup } from "../../../../util/dispose.js";
+
+export default class PlayerRenderer extends EntityRenderer {
+
+    constructor(worldRenderer) {
+        super(new ModelPlayer());
+
+        this.worldRenderer = worldRenderer;
+        
+        // Initialize Armor Models (Inflated) per material to prevent state overlapping
+        this.armorModels = {};
+        this.armorModels2 = {};
+        
+        const materials = ["iron", "gold", "diamond"];
+        
+        materials.forEach(mat => {
+            this.armorModels[mat] = new ModelPlayer(64, 32, 1.0); // Layer 1
+            this.armorModels2[mat] = new ModelPlayer(64, 32, 0.5); // Layer 2
+        });
+        
+        // Armor Textures are loaded on demand or preloaded in Start.js
+
+        // Load character texture
+        this.textureCharacter = worldRenderer.minecraft.getThreeTexture('../../steve (1).png');
+        this.textureCharacter.magFilter = THREE.NearestFilter;
+        this.textureCharacter.minFilter = THREE.NearestFilter;
+
+        // First person right-hand holder
+        this.handModel = null;
+        this.firstPersonGroup = new THREE.Object3D();
+        this.firstPersonGroup.name = "firstPersonGroup";
+        this.firstPersonOffhandGroup = new THREE.Object3D();
+        this.firstPersonOffhandGroup.name = "firstPersonOffhandGroup";
+        this.worldRenderer.overlay.add(this.firstPersonGroup);
+        this.worldRenderer.overlay.add(this.firstPersonOffhandGroup);
+    }
+
+    rebuild(entity) {
+        // Determine skin to use
+        let skinKey = (entity === this.worldRenderer.minecraft.player) ? 
+                      this.worldRenderer.minecraft.settings.skin : (entity.skin || "../../steve (1).png");
+        
+        // Correct legacy or malformed skin keys
+        if (!skinKey || skinKey === "char.png" || skinKey === "src/resources/char.png") {
+            skinKey = "../../steve (1).png";
+        }
+
+        let skinTexture = this.worldRenderer.minecraft.getThreeTexture(skinKey);
+        if (!skinTexture) {
+             skinTexture = this.textureCharacter;
+        }
+
+        // Check texture dimensions to support 64x64 skins
+        if (skinTexture && skinTexture.image) {
+            const h = skinTexture.image.height;
+            const w = skinTexture.image.width;
+            // Assuming default model is 64x32. If skin is 64x64, we need a new model instance
+            if (this.model && (this.model.textureHeight !== h || this.model.textureWidth !== w)) {
+                this.model = new ModelPlayer(w, h);
+                // Force hand model recreation
+                this.handModel = null;
+            }
+        }
+
+        // Initialize hand model if missing
+        if (!this.handModel && this.model) {
+            this.handModel = this.model.rightArm.clone();
+        }
+
+        // Always bind the skin texture to the tessellator before calling super.rebuild.
+        // This ensures the 3rd person body meshes (rebuilt in EntityRenderer) use the correct skin.
+        this.tessellator.bindTexture(skinTexture);
+
+        let firstPerson = (entity === this.worldRenderer.activeViewer) && this.worldRenderer.minecraft.settings.thirdPersonView === 0;
+
+        // Check if inventory exists safely
+        let inventoryItem = (entity.inventory && typeof entity.inventory.getItemInSelectedSlot === 'function') ? entity.inventory.getItemInSelectedSlot() : 0;
+        
+        // Use local itemToRender only for local player in first person
+        let itemId = firstPerson ? this.worldRenderer.itemToRender : inventoryItem;
+        let hasItem = itemId !== 0;
+
+        // Render Item in Hand
+        if (firstPerson) {
+            super.rebuild(entity);
+            this.firstPersonGroup.clear();
+            this.firstPersonOffhandGroup.clear();
+
+            // Ensure first-person hand brightness has a floor to prevent "black hand" before world light is ready
+            let handBrightness = Math.max(0.4, entity.getEntityBrightness());
+
+            // Main Hand
+            if (hasItem) {
+                let itemGroup = new THREE.Object3D();
+                this.firstPersonGroup.add(itemGroup);
+                let block = Block.getById(itemId);
+                if (block) {
+                    // Generate meshes at full brightness (1.0) so we can multiply them by dynamic brightness in the render loop
+                    this.worldRenderer.blockRenderer.renderBlockInFirstPerson(itemGroup, block, 1.0);
+                    if (itemGroup.children.length > 0) {
+                        let mesh = itemGroup.children[0];
+                        if (block.getRenderType() === BlockRenderType.ITEM) {
+                            mesh.material.side = THREE.DoubleSide;
+                        }
+                    }
+                }
+            }
+
+            // Off Hand
+            let offhandId = entity.inventory.offhand.id;
+            if (offhandId !== 0) {
+                let offhandGroup = new THREE.Object3D();
+                this.firstPersonOffhandGroup.add(offhandGroup);
+                let block = Block.getById(offhandId);
+                if (block) {
+                    this.worldRenderer.blockRenderer.renderBlockInFirstPerson(offhandGroup, block, 1.0);
+                    if (offhandGroup.children.length > 0) {
+                        let mesh = offhandGroup.children[0];
+                        if (block.getRenderType() === BlockRenderType.ITEM) {
+                            mesh.material.side = THREE.DoubleSide;
+                        }
+                    }
+                }
+            }
+        } else {
+            super.rebuild(entity);
+        }
+
+        // Render Armor (Must be after super.rebuild which clears the group)
+        if (entity.inventory && typeof entity.inventory.getArmor === 'function') {
+            const armorMaterials = [
+                { name: "iron", idStart: 306, tex1: "../../iron_layer_1.png", tex2: "../../iron_layer_2.png" },
+                { name: "diamond", idStart: 310, tex1: "../../diamond_layer_1.png", tex2: "../../diamond_layer_2.png" },
+                { name: "gold", idStart: 314, tex1: "../../goldarmor.png", tex2: "../../goldarmor2.png" }
+            ];
+
+            const helmId = entity.inventory.getArmor(0).id;
+            const chestId = entity.inventory.getArmor(1).id;
+            const legsId = entity.inventory.getArmor(2).id;
+            const bootsId = entity.inventory.getArmor(3).id;
+
+            // Sync animation state for all models
+            [this.armorModels, this.armorModels2].forEach(collection => {
+                Object.values(collection).forEach(model => {
+                    model.isSneaking = this.model.isSneaking;
+                    model.isRiding = this.model.isRiding;
+                    model.hasItemInHand = this.model.hasItemInHand;
+                    model.swingProgress = this.model.swingProgress;
+                });
+            });
+
+            if (!firstPerson) {
+                // Iterate materials and render layers if present
+                for (const mat of armorMaterials) {
+                    const offset = mat.idStart;
+                    // Check IDs match this material set
+                    const hasHelm = helmId === offset;
+                    const hasChest = chestId === offset + 1;
+                    const hasLegs = legsId === offset + 2;
+                    const hasBoots = bootsId === offset + 3;
+
+                    if (hasHelm || hasChest || hasBoots) {
+                        // Layer 1
+                        let tex = this.worldRenderer.minecraft.getThreeTexture(mat.tex1);
+                        if (tex) {
+                            let model = this.armorModels[mat.name];
+                            
+                            tex.magFilter = THREE.NearestFilter;
+                            tex.minFilter = THREE.NearestFilter;
+                            this.tessellator.bindTexture(tex);
+                            let prevSide = this.tessellator.material.side;
+                            this.tessellator.material.side = THREE.DoubleSide;
+
+                            // Apply polygon offset to material before rebuilding so generated meshes inherit it
+                            this.tessellator.material.polygonOffset = true;
+                            this.tessellator.material.polygonOffsetFactor = -1.0;
+                            this.tessellator.material.polygonOffsetUnits = -1.0;
+
+                            // Configure visibility
+                            model.head.bone.visible = hasHelm;
+                            model.body.bone.visible = hasChest;
+                            model.rightArm.bone.visible = hasChest;
+                            model.leftArm.bone.visible = hasChest;
+                            model.rightLeg.bone.visible = hasBoots;
+                            model.leftLeg.bone.visible = hasBoots;
+
+                            model.rebuild(this.tessellator, this.group);
+                            
+                            // Reset material props
+                            this.tessellator.material.polygonOffset = false;
+                            this.tessellator.material.side = prevSide;
+                        }
+                    }
+
+                    if (hasLegs) {
+                        // Layer 2
+                        let tex = this.worldRenderer.minecraft.getThreeTexture(mat.tex2);
+                        if (tex) {
+                            let model = this.armorModels2[mat.name];
+                            
+                            tex.magFilter = THREE.NearestFilter;
+                            tex.minFilter = THREE.NearestFilter;
+                            this.tessellator.bindTexture(tex);
+                            let prevSide = this.tessellator.material.side;
+                            this.tessellator.material.side = THREE.DoubleSide;
+
+                            // Apply polygon offset
+                            this.tessellator.material.polygonOffset = true;
+                            this.tessellator.material.polygonOffsetFactor = -1.0;
+                            this.tessellator.material.polygonOffsetUnits = -1.0;
+
+                            model.head.bone.visible = false;
+                            model.body.bone.visible = hasLegs;
+                            model.rightArm.bone.visible = false;
+                            model.leftArm.bone.visible = false;
+                            model.rightLeg.bone.visible = hasLegs;
+                            model.leftLeg.bone.visible = hasLegs;
+
+                            model.rebuild(this.tessellator, this.group);
+
+                            // Reset
+                            this.tessellator.material.polygonOffset = false;
+                            this.tessellator.material.side = prevSide;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Render Nametag for Players (Must be added after super.rebuild because super clears the group)
+        if (entity.constructor.name === "RemotePlayerEntity" || entity.constructor.name === "PlayerEntity") {
+            this.renderNameTag(entity, entity.customName || entity.username || "Player");
+        }
+    }
+
+
+
+    render(entity, partialTicks) {
+
+        let swingProgress = entity.swingProgress - entity.prevSwingProgress;
+        if (swingProgress < 0.0) {
+            swingProgress++;
+        }
+        this.model.swingProgress = entity.prevSwingProgress + swingProgress * partialTicks;
+        
+        // Sync swing to all armor models
+        [this.armorModels, this.armorModels2].forEach(collection => {
+            Object.values(collection).forEach(model => {
+                model.swingProgress = this.model.swingProgress;
+            });
+        });
+        
+        // Check if inventory exists safely
+        this.model.hasItemInHand = (entity.inventory && typeof entity.inventory.getItemInSelectedSlot === 'function') ? entity.inventory.getItemInSelectedSlot() !== 0 : false;
+        
+        // Sync item state
+        [this.armorModels, this.armorModels2].forEach(collection => {
+            Object.values(collection).forEach(model => {
+                model.hasItemInHand = this.model.hasItemInHand;
+            });
+        });
+        
+        this.model.isSneaking = entity.sneaking;
+        // Sync sneaking
+        [this.armorModels, this.armorModels2].forEach(collection => {
+            Object.values(collection).forEach(model => {
+                model.isSneaking = entity.sneaking;
+            });
+        });
+
+        this.model.isRiding = entity.isRiding ? entity.isRiding() : false;
+        // Sync riding
+        [this.armorModels, this.armorModels2].forEach(collection => {
+            Object.values(collection).forEach(model => {
+                model.isRiding = this.model.isRiding;
+            });
+        });
+
+        // Invisibility logic (including Spectator mode)
+        let isInvisible = (entity.activeEffects && entity.activeEffects.has("invisibility")) || (entity.gameMode === 3);
+        
+        // Use activeViewer to identify if we are rendering for the local player's first-person view
+        let firstPerson = (entity === this.worldRenderer.activeViewer) && this.worldRenderer.minecraft.settings.thirdPersonView === 0;
+        
+        if (this.model && this.model.head) {
+            const vis = !(isInvisible && !firstPerson);
+            this.model.head.bone.visible = vis;
+            this.model.body.bone.visible = vis;
+            this.model.rightArm.bone.visible = vis;
+            this.model.leftArm.bone.visible = vis;
+            this.model.rightLeg.bone.visible = vis;
+            this.model.leftLeg.bone.visible = vis;
+        }
+
+        super.render(entity, partialTicks);
+
+        // Hide armor and held items if invisible and in 3rd person
+        if (isInvisible && !firstPerson) {
+            this.group.traverse(child => {
+                // Identify armor meshes (they are children of group built by rebuild)
+                if (child.isMesh && child !== this.group.getObjectByName("nametag")) {
+                    child.visible = false;
+                }
+                // Also hide first person hands if they were attached
+                if (child.name === "firstPersonGroup" || child.name === "firstPersonOffhandGroup") {
+                    child.visible = false;
+                }
+            });
+        }
+
+        // Actual size of the entity (Accounting for attribute scale)
+        let scale = 7.0 / 120.0;
+        let scaleFactor = (1.8 + (entity.attributeScale || 0) * 0.5) / 1.8;
+        this.group.scale.set(-scale * scaleFactor, -scale * scaleFactor, scale * scaleFactor);
+
+        // Update Y position to account for scaling so feet stay grounded
+        let interpolatedY = entity.prevY + (entity.y - entity.prevY) * partialTicks;
+        
+        // Counteract the leg animation dip (3 units in model space) to prevent hovering
+        let sneakOffset = entity.sneaking ? (3.0 * (7.0 / 120.0)) : 0;
+        this.group.position.setY(interpolatedY + 1.4 * scaleFactor - sneakOffset * scaleFactor);
+
+        // Calculate synced animation parameters
+        let rotationBody = this.interpolateRotation(entity.prevRenderYawOffset, entity.renderYawOffset, partialTicks);
+        let rotationHead = this.interpolateRotation(entity.prevRotationYawHead, entity.rotationYawHead, partialTicks);
+        let limbSwingStrength = entity.prevLimbSwingStrength + (entity.limbSwingStrength - entity.prevLimbSwingStrength) * partialTicks;
+        let limbSwing = entity.limbSwingProgress - entity.limbSwingStrength * (1.0 - partialTicks);
+        let yaw = rotationHead - rotationBody;
+        
+        // Normalize yaw to -180 to 180 to prevent snapping when wrapping around
+        while (yaw < -180) yaw += 360;
+        while (yaw >= 180) yaw -= 360;
+        
+        // Head orientation relative to the body model
+        let finalYaw = yaw;
+        
+        // Clamp head rotation to 90 degrees left/right of body yaw
+        if (finalYaw > 90) finalYaw = 90;
+        if (finalYaw < -90) finalYaw = -90;
+        
+        let pitch = entity.prevRotationPitch + (entity.rotationPitch - entity.prevRotationPitch) * partialTicks;
+        let timeAlive = entity.ticksExisted + partialTicks;
+
+        // Force head rotation update for main model BEFORE calling super.render
+        // This ensures the body and head models use the same synchronized yaw
+        if (this.model) {
+            this.model.setRotationAngles(this.group, limbSwing, limbSwingStrength, timeAlive, finalYaw, pitch, partialTicks);
+        }
+
+        // Update armor model bones for all materials using the same parameters
+        Object.values(this.armorModels).forEach(model => {
+            model.render(this.group, limbSwing, limbSwingStrength, timeAlive, finalYaw, pitch, partialTicks);
+        });
+        Object.values(this.armorModels2).forEach(model => {
+            model.render(this.group, limbSwing, limbSwingStrength, timeAlive, finalYaw, pitch, partialTicks);
+        });
+
+        // Update first-person hand brightness to follow world lighting every frame
+        if (firstPerson) {
+            let handBrightness = Math.max(0.4, entity.getEntityBrightness());
+            [this.firstPersonGroup, this.firstPersonOffhandGroup].forEach(g => {
+                g.traverse(child => {
+                    if (child.isMesh && child.material && child.material.color) {
+                        child.material.color.setScalar(handBrightness);
+                    }
+                });
+            });
+        }
+    }
+
+    updateFirstPerson(player) {
+        // Asset refreshes dispose the first-person meshes while the cached
+        // body metadata can remain unchanged. Force a rebuild in that case
+        // so the hand cannot disappear until the next view/state change.
+        if (!this.handModel || !this.group.buildMeta) {
+            delete this.group.buildMeta;
+        }
+        this.prepareModel(player);
+
+        // Make the groups visible
+        this.firstPersonGroup.visible = true;
+        this.firstPersonOffhandGroup.visible = true;
+    }
+
+    renderRightHand(player, partialTicks) {
+        this.updateFirstPerson(player);
+
+        // Bind skin texture
+        let skinKey = (player === this.worldRenderer.minecraft.player) ? this.worldRenderer.minecraft.settings.skin : player.skin;
+        let skinTexture = this.worldRenderer.minecraft.getThreeTexture(skinKey);
+        
+        if (!skinTexture) {
+            skinTexture = this.textureCharacter;
+        }
+        
+        if (skinTexture) {
+            skinTexture.magFilter = THREE.NearestFilter;
+            skinTexture.minFilter = THREE.NearestFilter;
+            this.tessellator.bindTexture(skinTexture);
+        }
+
+        if (this.handModel) {
+            // Clear previous content (e.g. items) and rebuild hand geometry
+            this.firstPersonGroup.clear();
+
+            // Apply dynamic brightness to hand with floor to prevent black hand bug
+            let brightness = Math.max(0.4, player.getEntityBrightness());
+            this.tessellator.setColor(brightness, brightness, brightness);
+
+            this.tessellator.startDrawing();
+            this.handModel.rebuild(this.tessellator, this.firstPersonGroup);
+
+            // Set transform of renderer
+            this.model.swingProgress = 0;
+            this.model.hasItemInHand = false;
+            this.model.isSneaking = false;
+            this.model.isRiding = false; // Reset riding state for first person hand
+            this.model.setRotationAngles(player, 0, 0, 0, 0, 0, 0);
+            
+            this.handModel.copyTransformOf(this.model.rightArm);
+
+            // Render hand model
+            this.handModel.render();
+        }
+    }
+
+    resetCache() {
+        super.resetCache();
+        // First-person meshes live outside the body group.
+        disposeGroup(this.firstPersonGroup, false);
+        disposeGroup(this.firstPersonOffhandGroup, false);
+        this.handModel = null;
+        delete this.group.buildMeta;
+    }
+
+    dispose() {
+        super.dispose();
+        disposeGroup(this.firstPersonGroup, false);
+        disposeGroup(this.firstPersonOffhandGroup, false);
+    }
+
+    fillMeta(entity, meta) {
+        super.fillMeta(entity, meta);
+
+        // Include active viewer in metadata so cache invalidates when camera switches in splitscreen
+        meta.activeViewerId = this.worldRenderer.activeViewer ? this.worldRenderer.activeViewer.id : -1;
+
+        let firstPerson = (entity === this.worldRenderer.activeViewer) && this.worldRenderer.minecraft.settings.thirdPersonView === 0;
+
+        meta.firstPerson = firstPerson;
+        // Use setting for local player, entity field for remote
+        meta.skin = (entity === this.worldRenderer.minecraft.player) ? 
+                    this.worldRenderer.minecraft.settings.skin : entity.skin;
+        
+        // Check if inventory exists safely
+        let inventoryItem = (entity.inventory && typeof entity.inventory.getItemInSelectedSlot === 'function') ? entity.inventory.getItemInSelectedSlot() : 0;
+        meta.itemInHand = firstPerson ? this.worldRenderer.itemToRender : inventoryItem;
+        
+        if (entity.inventory) {
+            meta.offhandItem = entity.inventory.offhand.id;
+        }
+
+        meta.isRiding = entity.isRiding ? entity.isRiding() : false;
+        meta.isEating = (entity.itemInUse !== null);
+        meta.isFishing = !!entity.fishEntity;
+        meta.attributeScale = entity.attributeScale;
+
+        // Add armor state to meta so we rebuild when armor changes
+        if (entity.inventory && typeof entity.inventory.getArmor === 'function') {
+            meta.armor = [
+                entity.inventory.getArmor(0).id,
+                entity.inventory.getArmor(1).id,
+                entity.inventory.getArmor(2).id,
+                entity.inventory.getArmor(3).id
+            ].join(",");
+        }
+
+        // Trigger rebuild for bow animation
+        if (meta.itemInHand === 261 && entity === this.worldRenderer.minecraft.player) {
+            const duration = this.worldRenderer.minecraft.bowPullDuration;
+            if (duration >= 16) meta.bowFrame = 3;
+            else if (duration >= 8) meta.bowFrame = 2;
+            else if (duration > 0) meta.bowFrame = 1;
+            else meta.bowFrame = 0;
+        }
+
+        // Trigger rebuild for crossbow animation
+        if (meta.itemInHand === 499 && entity === this.worldRenderer.minecraft.player) {
+            const duration = this.worldRenderer.minecraft.crossbowPullDuration;
+            const charged = entity.inventory.getStackInSlot(entity.inventory.selectedSlotIndex).tag?.charged;
+            if (charged) meta.crossbowFrame = 4; // Fifth sprite: Arrow
+            else if (duration >= 16) meta.crossbowFrame = 3;
+            else if (duration >= 8) meta.crossbowFrame = 2;
+            else if (duration > 0) meta.crossbowFrame = 1;
+            else meta.crossbowFrame = 0;
+        }
+    }
+
+}

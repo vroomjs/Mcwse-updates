@@ -1,0 +1,12 @@
+--- a/src/js/net/minecraft/client/gui/achievement/AchievementManager.js
++++ b/src/js/net/minecraft/client/gui/achievement/AchievementManager.js
+@@ -13,7 +13,7 @@
+             'bakebread': { name: 'Bake Bread', desc: 'Turn wheat into bread', icon: 'bakebread.png' },
+             'porkchop': { name: 'Delicious', desc: 'Cook a porkchop', icon: 'porkchop (1).png' }
+         };
+-
++        
+         this.unlocked = {};
+         this.queue = [];
+         this.currentToast = null;
+
