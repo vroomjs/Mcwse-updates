@@ -1,11 +1,11 @@
 # Netlify configuration for vroomjs/Mcwse-updates
 #
-# The repository is an archive of every build, one folder per version, so the
-# repo root has no index.html. Netlify publishes "Latest", which holds the
-# newest build (currently Deploy-7-7).
+# The repository is an archive of every build, one folder per version number,
+# so the repo root has no index.html. Netlify publishes "Latest", which holds
+# the newest build (currently 7.7).
 #
 # To ship an older build instead, change `publish` to that version's folder
-# name, e.g. publish = "Deploy-7-6".
+# name, e.g. publish = "7-6".
 #
 # There is no build step: these are static ES-module apps with three.js
 # vendored in each version's libraries/ directory.
